@@ -1,13 +1,29 @@
 name = "PlanetPostStats"
-uuid = "4ca0ed51-674c-45a5-b265-1cbe6c24f19b"
-authors = ["Jan P Perlwitz <jan.p.perlwitz@caprllc.com>"]
+uuid = "72538820-a500-4a37-8b65-fe9cc8f4efac"
+authors = ["Jan P. Perlwitz <jan.p.perlwitz@caprllc.com>"]
 version = "0.1.0-DEV"
 
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+PlanetTools = "6e134580-676a-4416-8bb0-db5b9bd9bc08"
+
+[sources]
+PlanetTools = {url = "https://github.com/caprrepos/PlanetTools.jl.git", rev = "main"}
+
 [compat]
+DataFrames = "1.6"
+Dates = "1"
+NCDatasets = "0.14"
+OrderedCollections = "1, 2"
+PlanetTools = "0.2"
 julia = "1.13"
 
 [extras]
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Statistics", "Test"]
