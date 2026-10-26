@@ -10,5 +10,5 @@ Documentation for [PlanetPostStats](https://github.com/caprrepos/PlanetPostStats
 ```
 
 ```@autodocs
-Modules = [PlanetPostStats]
+Modules = [PlanetPostStats, PlanetPostStats.TimeSeriesMeSd]
 ```
