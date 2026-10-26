@@ -1,0 +1,6 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+PlanetPostStats = "4ca0ed51-674c-45a5-b265-1cbe6c24f19b"
+
+[sources]
+PlanetPostStats = {path = ".."}
