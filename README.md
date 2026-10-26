@@ -3,12 +3,9 @@
 Statistical post-processing of `scaleacc` output from NASA GISS ModelE and ROCKE-3D
 simulations, for one or many simulations at once.
 
-| Submodule        | Replaces                                                    | Purpose |
-|:-----------------|:------------------------------------------------------------|:--------|
-| `TimeSeriesMeSd` | `mkTimeSeriesMeSd_*.jl` + `griddedPlanetFields*_{calculate,write}MeSd.jl` | monthly / seasonal / annual time series and multi-year means & standard deviations of gridded, zonal-mean and global-mean fields |
-
-Further scripts are added as further submodules (`src/<Name>/<Name>.jl`, included in
-`src/PlanetPostStats.jl`).
+| Submodule        | Purpose |
+|:-----------------|:--------|
+| `TimeSeriesMeSd` | monthly, seasonal, and annual time series and multi-year means and standard deviations of gridded, zonal-mean, and global-mean fields |
 
 ## Installation
 
@@ -19,9 +16,10 @@ Pkg.add(url="https://github.com/caprrepos/PlanetPostStats.jl")
 Pkg.develop(path="/path/to/PlanetPostStats.jl")
 ```
 
-Requires Julia ≥ 1.13 and PlanetTools ≥ 0.2. Dependencies: PlanetTools
-(`caprrepos/PlanetTools.jl`, not registered; installed from GitHub through the
-`[sources]` entry of `Project.toml`), NCDatasets, DataFrames, OrderedCollections, Dates.
+Requires Julia ≥ 1.13. Dependencies: PlanetTools ≥ 0.2
+([caprrepos/PlanetTools.jl](https://github.com/caprrepos/PlanetTools.jl), not registered;
+installed from GitHub through the `[sources]` entry of `Project.toml`), NCDatasets,
+DataFrames, OrderedCollections, Dates.
 
 ## Quick start
 
@@ -46,80 +44,73 @@ results = run_timeseries_statistics(cfg)
 annual_summary(results)        # DataFrame of global-mean MOA/SOA of the 2D variables
 ```
 
-The complete conversion of `mkTimeSeriesMeSd_Rocke3d_tracermass3d.jl` is in
+A complete application (ROCKE-3D Mars dust tracers, 3D fields, accumulated dust size
+classes, vertical coordinate, metadata) is in
 `examples/mkTimeSeriesMeSd_Rocke3d_tracermass3d.jl`.
 
-## Mapping of the old script constants
+## Configuration
 
-| Old constant(s)                                   | `TimeSeriesConfig` field |
-|:--------------------------------------------------|:-------------------------|
-| `BASEPATH`, `SBRANCH` → `SIMPATH`                 | `simpath` |
-| `RUN_ID`                                          | `runs` |
-| `POSTDIR`                                         | `postdir` (default `"Post"`) |
-| `POSTNAMES`, `PHYSNAMES`, `PHYSSCALES`, `PHYSUNITS` | `groups` (`InputGroup`, `InputVariable`) |
-| `accumulate_dust_masses_modelE`                   | `derived` (`dust_mass_classes`, `cumulative_sums`, `DerivedVariable`) |
-| `GROUPDIR`, `GROUPNAME`                           | `output_dir`, `output_name` |
-| `FSIMYEAR` … `LSIMMONTH`                          | `sim_period` |
-| `FSTATYEAR` … `LSTATMONTH`                        | `stat_period` |
-| `PLANET`, `DAYS_IN_MONTH`, `DAY_LENGTH`, `CMONLIST` | `calendar` (`MARS_CALENDAR`, `EARTH_NOLEAP_CALENDAR`, `PlanetCalendar`) |
-| `FIRST_MONTH_OF_SEASON`, `LENGTH_OF_SEASON`, `SEASON_NAMES` | `seasons` (`SeasonSpec`, `MARS_SEASONS`, `EARTH_SEASONS`) |
-| `TIME_UNITS`                                      | `time_axis` (`TimeAxis`) |
-| `LS1`, `PSF`, `PTOP`                              | `vertical` (`VerticalCoordinate`) |
-| `MISSING_THRESHOLD`                               | `threshold` |
-| `FILL_VALUE`                                      | `fill_value` |
-| `generalattributes`                               | `global_attributes` |
-| `fnames_modelE_2d`                                | `filename` (default `scaleacc_filename` = `PlanetTools.fnames_modele`) |
+All settings are fields of `TimeSeriesConfig`; see its docstring for details.
+
+| Field | Content |
+|:------|:--------|
+| `simpath`, `runs`, `postdir` | input files in `<simpath>/<run>/<postdir>/` (default `postdir = "Post"`) |
+| `groups` | `scaleacc` products and variables to read (`InputGroup`, `InputVariable` with scale and units) |
+| `derived` | variables computed after reading (`DerivedVariable`, `cumulative_sums`, `dust_mass_classes`) |
+| `sim_period`, `stat_period` | months of the input files; window of the multi-year statistics |
+| `calendar` | month lengths and CF calendar name (`MARS_CALENDAR`, `EARTH_NOLEAP_CALENDAR`, `PlanetCalendar`) |
+| `seasons` | `SeasonSpec`s (`MARS_SEASONS`, `EARTH_SEASONS`) |
+| `time_axis` | reference month and units of the time coordinate (`TimeAxis`) |
+| `vertical` | hybrid σ–p coordinate metadata `LS1`, `Psf`, `Ptop` (`VerticalCoordinate`) |
+| `threshold` | minimum percentage of valid data for every averaging step (default 80) |
+| `weight_seasons` | weight months by their length in seasonal means (default `true`) |
+| `products` | subset of `:mts, :ats, :sts, :moa, :mos, :mom` |
+| `output_dir`, `output_name`, `output_root` | output location and file-name tag |
+| `fill_value`, `deflatelevel`, `global_attributes` | NetCDF output settings |
+| `filename` | input file-name function (default `scaleacc_filename`, `<MON><YYYY>.<product><run>.nc`) |
 
 ## Output
 
-Per run, in `<simpath>/<run>/<output_dir>/` (file names as before; tag `ij/zm/gm`, or
-`ijl/zml/gml` if the file contains 3D variables):
+Per run, in `<simpath>/<run>/<output_dir>/` (or `<output_root>/<run>/<output_dir>/`). The
+tag is `ij`, `zm`, `gm` (gridded, zonal mean, global mean), or `ijl`, `zml`, `gml` if the
+file contains 3D variables.
 
-| Directory      | Files |
-|:---------------|:------|
-| `MonthlyTs`    | `JAN0001-DEC0020.<name><run>.<tag>.mts.nc` |
-| `AnnualTs`     | `ANN_0001-0020.<name><run>.<tag>.ats.nc` |
-| `SeasonalTs`   | `FMA_0001-0020.<name><run>.<tag>.sts.nc` (one per season) |
-| `AnnualMeSd`   | `ANN_0003_0020.<name><run>.<tag>.{moa,soa}.nc` |
-| `SeasonalMeSd` | `FMA_0003_0020.<name><run>.<tag>.{mos,sos}.nc` |
-| `MonthlyMeSd`  | `JAN-DEC_0003_0020.<name><run>.<tag>.{mom,som}.nc` |
+| Directory      | Files | Content |
+|:---------------|:------|:--------|
+| `MonthlyTs`    | `JAN0001-DEC0020.<name><run>.<tag>.mts.nc` | monthly means |
+| `AnnualTs`     | `ANN_0001-0020.<name><run>.<tag>.ats.nc` | annual means of complete years |
+| `SeasonalTs`   | `FMA_0001-0020.<name><run>.<tag>.sts.nc` | seasonal means, one file per season |
+| `AnnualMeSd`   | `ANN_0003_0020.<name><run>.<tag>.{moa,soa}.nc` | multi-year mean / SD of annual means |
+| `SeasonalMeSd` | `FMA_0003_0020.<name><run>.<tag>.{mos,sos}.nc` | multi-year mean / SD of seasonal means |
+| `MonthlyMeSd`  | `JAN-DEC_0003_0020.<name><run>.<tag>.{mom,som}.nc` | multi-year mean / SD of each month |
 
 Time-series files contain `time` (months from `time_axis.reference` to the first month of
 each period) with the CF attributes `calendar` (`"mars"`, `"noleap"`, …) and
-`month_lengths`, the integer variables `year(time)` and `month(time)`, and the strings
-`Dates(time)`. `PlanetTools.readnetcdf` returns `time` as numbers.
+`month_lengths`, the integer variables `year(time)` and `month(time)`, and the date
+strings `Dates(time)`. `PlanetTools.readnetcdf` returns `time` as numbers. Missing data
+are stored as `_FillValue` (`fill_value`, default `-1f30`).
 
-## Statistics: PlanetTools conventions
+## Statistics
 
-All statistics are computed by `PlanetTools.PlanetStatistics` (`calc_planet_means!`,
-`calc_annual_mean_ts!`, `calc_seasonal_mean_ts!`, `calc_multiyear_stats!`) through thin
-adapters (`planet_means`, `annual_means`, `seasonal_means`, `multiyear_stats`,
-`monthly_stats`) that reshape one variable of one run to PlanetTools' `(Sim, Var, …)`
-layout without copying. Hence:
+All statistics are computed with `PlanetTools.PlanetStatistics`:
 
-* zonal mean: equal weights over valid longitudes; global mean: area-weighted;
-* annual/seasonal means: month-length weight × availability of the monthly input;
-  threshold on the *number* of valid months;
-* multi-year mean and SD: availability-weighted mean and **sample** SD
-  (`Σw(x − μ)² / (V₁ − V₂/V₁)`, i.e. `n − 1` for equal weights);
-* one `threshold` (percent) for every step.
+* zonal mean: equal weights over the valid longitudes; global mean: area-weighted;
+* annual and seasonal means: month-length weight × availability of the monthly input;
+  valid if at least `threshold` % of the months are valid;
+* multi-year mean and standard deviation: availability-weighted mean and sample standard
+  deviation, `Σw(x − μ)² / (V₁ − V₂/V₁)` with `V₁ = Σw`, `V₂ = Σw²` (`n − 1` for equal
+  weights);
+* spatial means: valid if at least `threshold` % of the longitudes (zonal) or of the area
+  (global) are valid.
 
-## Design decisions
+One run is held in memory at a time; for each variable all products are computed and
+written before the next variable is processed.
 
-* **One run in memory at a time**; per variable, all products are computed and written
-  before the next variable, so peak memory ≈ one run's input + one variable's products.
-* **Statistics from PlanetTools**, file names from `fnames_modele`, dust classes from the
-  bin/class tables of `accumulate_dust_masses_modele` — one implementation to maintain.
-  With the loop kernels of PlanetTools ≥ 0.2 the whole statistics chain of one
-  72 × 46 × 40 × 240 variable takes ≈ 0.5 s and 0.13 GiB (2 threads).
-* **Output with `PlanetTools.ReadWritePlanet.writenetcdf`** (≥ 0.2), which writes missing
-  values as `_FillValue` and the planetary `time` axis without CF date encoding; the time
-  coordinate carries the CF attributes `calendar` (e.g. `"mars"`) and `month_lengths`.
-
-## Verification
+## Tests
 
 ```julia
-include("test/runtests.jl")   # synthetic scaleacc files with analytic solutions
+using Pkg
+Pkg.test("PlanetPostStats")   # synthetic scaleacc files with analytic solutions
 ```
 
 ## Formatting
