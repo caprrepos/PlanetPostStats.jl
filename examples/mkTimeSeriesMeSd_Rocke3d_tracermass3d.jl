@@ -1,9 +1,8 @@
 # Time series, multi-year means and standard deviations of 3D dust tracer masses and
 # other variables from ROCKE-3D Mars simulations post-processed with scaleacc.
 #
-# This is the former script `mkTimeSeriesMeSd_Rocke3d_tracermass3d.jl`, rewritten as a
-# configuration for `PlanetPostStats.TimeSeriesMeSd`. All simulation- and user-specific
-# settings are in the `TimeSeriesConfig` below; no other code needs to be edited.
+# Uses `PlanetPostStats.TimeSeriesMeSd`. All simulation- and user-specific settings are in
+# the `TimeSeriesConfig` below; no other code needs to be edited.
 #
 # Author: Jan P. Perlwitz, PhD; Climate, Aerosol, and Pollution Research, LLC
 # Contact: jan.p.perlwitz@caprllc.com
@@ -60,11 +59,11 @@ cfg = TimeSeriesConfig(;
     stat_period=(YearMonth(3, 1), YearMonth(20, 12)),
     calendar=MARS_CALENDAR,
     seasons=MARS_SEASONS,
-    # year 1 / month 1 gets time = 1, as in the original monthly files
+    # year 1 / month 1 gets time = 1
     time_axis=TimeAxis(; reference=YearMonth(0, 12), units="months since 0023-12-56"),
     vertical=VerticalCoordinate(31, 6.86, 0.2),
     threshold=80.0,
-    weight_seasons=true,       # false reproduces the original unweighted seasonal means
+    weight_seasons=true,       # false: equal weights for the months of a season
     output_dir="Tracermass3d",
     output_name="tracermass3d",
     global_attributes=attributes,
