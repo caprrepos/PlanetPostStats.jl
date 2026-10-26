@@ -10,19 +10,18 @@ simulations, for one or many simulations at once.
 Further scripts are added as further submodules (`src/<Name>/<Name>.jl`, included in
 `src/PlanetPostStats.jl`).
 
-## Installation (private repository)
+## Installation
 
 ```julia
 using Pkg
-Pkg.develop(path="/path/to/PlanetPostStats")          # local clone
-# or
-Pkg.add(url="git@github.com:<user>/PlanetPostStats.jl.git")
+Pkg.add(url="https://github.com/caprrepos/PlanetPostStats.jl")
+# or, for a local clone
+Pkg.develop(path="/path/to/PlanetPostStats.jl")
 ```
 
-Requires Julia ≥ 1.13 and PlanetTools ≥ 0.2. Dependencies: PlanetTools (private,
-`caprrepos/PlanetTools.jl`, resolved through the `[sources]` entry of `Project.toml`, so
-your GitHub credentials must give `git` access to it), NCDatasets, DataFrames,
-OrderedCollections, Dates.
+Requires Julia ≥ 1.13 and PlanetTools ≥ 0.2. Dependencies: PlanetTools
+(`caprrepos/PlanetTools.jl`, not registered; installed from GitHub through the
+`[sources]` entry of `Project.toml`), NCDatasets, DataFrames, OrderedCollections, Dates.
 
 ## Quick start
 
