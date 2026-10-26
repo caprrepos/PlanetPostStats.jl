@@ -143,7 +143,7 @@ Processes a single run (see [`run_timeseries_statistics`](@ref) for the steps).
 # Example
 
 ```julia
-res = process_run(cfg, "PS20240925TdustM40_Mars_AMF0p5w")
+res = process_run(cfg, "MarsDustRun1")
 res.files
 ```
 """

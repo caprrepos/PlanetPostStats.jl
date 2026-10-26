@@ -28,8 +28,8 @@ using PlanetPostStats
 using PlanetPostStats.TimeSeriesMeSd
 
 cfg = TimeSeriesConfig(;
-    simpath="/data/Rocke3DMars/Simulations/Planet_20240925",
-    runs=["PS20240925TdustM40_Mars_AMF0p5w"],
+    simpath="/path/to/simulations",
+    runs=["MarsDustRun1"],
     groups=[InputGroup("aij", [InputVariable("prsurf"; units="hPa")])],
     sim_period=(YearMonth(1, 1), YearMonth(20, 12)),
     stat_period=(YearMonth(3, 1), YearMonth(20, 12)),

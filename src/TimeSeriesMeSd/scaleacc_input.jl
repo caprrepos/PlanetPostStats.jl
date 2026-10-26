@@ -217,7 +217,7 @@ A [`RunData`](@ref).
 # Example
 
 ```julia
-rd = load_run(cfg, "PS20240925TdustM40_Mars_AMF0p5w")
+rd = load_run(cfg, "MarsDustRun1")
 rd.months[end]                          # last month with data
 size(rd.variables["Clay"].data)         # (72, 46, 40, 240)
 ```

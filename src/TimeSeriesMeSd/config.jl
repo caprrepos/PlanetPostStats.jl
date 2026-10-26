@@ -328,7 +328,7 @@ end
     scaleacc_filename(ym::YearMonth, product, run; ext=".nc") -> String
 
 Default name of a monthly `scaleacc` output file, `<MON><YYYY>.<product><run><ext>`
-(e.g. `JAN0001.aijPS20240925TdustM40_Mars_AMF0p5w.nc`), built with
+(e.g. `JAN0001.aijMarsDustRun1.nc`), built with
 `PlanetTools.Constructors.fnames_modele` (upper-case English month abbreviation, year
 zero-padded to four digits, year ≥ 0).
 
@@ -428,8 +428,8 @@ post-processing performed by [`run_timeseries_statistics`](@ref).
 
 ```julia
 cfg = TimeSeriesConfig(;
-    simpath="/home/jan/Data/Rocke3DMars/Simulations/Planet_20240925",
-    runs=["PS20240925TdustM40_Mars_AMF0p5w"],
+    simpath="/path/to/simulations",
+    runs=["MarsDustRun1"],
     groups=[InputGroup("aij", [InputVariable("prsurf"; units="hPa")])],
     sim_period=(YearMonth(1, 1), YearMonth(20, 12)),
     stat_period=(YearMonth(3, 1), YearMonth(20, 12)),

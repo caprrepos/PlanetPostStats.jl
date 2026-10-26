@@ -2,18 +2,16 @@
 # other variables from ROCKE-3D Mars simulations post-processed with scaleacc.
 #
 # Uses `PlanetPostStats.TimeSeriesMeSd`. All simulation- and user-specific settings are in
-# the `TimeSeriesConfig` below; no other code needs to be edited.
-#
-# Author: Jan P. Perlwitz, PhD; Climate, Aerosol, and Pollution Research, LLC
-# Contact: jan.p.perlwitz@caprllc.com
+# the `TimeSeriesConfig` below; no other code needs to be edited. Replace the paths, run
+# identifiers, and metadata with your own.
 
 using PlanetPostStats.TimeSeriesMeSd
 using OrderedCollections: OrderedDict
 using DataFrames
 
 ## Simulations ---------------------------------------------------------------------------
-const SIMPATH = "/home/jan/Data/Rocke3DMars/Simulations/Planet_20240925"
-const RUNS = ["PS20240925TdustM40_Mars_AMF0p5w"]
+const SIMPATH = "/path/to/simulations"
+const RUNS = ["MarsDustRun1", "MarsDustRun2"]
 const POSTNAMES = ["aij", "aijl", "taijl"]
 
 ## Variables -------------------------------------------------------------------------------
@@ -35,18 +33,14 @@ accumulated = dust_mass_classes(DUST_BINS; units="kg kg-1")
 ## Metadata ------------------------------------------------------------------------------
 attributes = OrderedDict{String,Any}(
     "Raw_data_origin" => "NASA GISS ROCKE-3D Mars",
-    "Model_repository" => "username@simplex.giss.nasa.gov:/giss/gitrepo/modelE.git",
-    "Git_revision" => "f5bacab4a62b60378cf3875ab27094f71ec56c9f",
+    "Model_repository" => "<model source repository>",
+    "Git_revision" => "<git revision of the model code>",
     "Input_created_with" => "scaleacc <acc-file> " * join(POSTNAMES, ","),
     "Programming_language" => "Julia v" * string(VERSION),
     "Julia_script_name" => basename(@__FILE__),
-    "File_creator" => "Dr Jan P Perlwitz",
-    "Organization" => "Climate, Aerosol, and Pollution Research, LLC",
-    "Contact" => "jan.p.perlwitz@caprllc.com",
-    "Funding" => "NASA Grants # 80NSSC20K1302, # 80NSSC22K1735, # 80NSSC22K1663",
-    "Supporting_organizations" =>
-        "NASA Goddard Institute for Space Studies; GSFC Sellers Exoplanet Environments " *
-        "Collaboration (SEEC); NASA Center for Climate Simulation",
+    "File_creator" => "<name>",
+    "Organization" => "<organization>",
+    "Contact" => "<e-mail address>",
 )
 
 ## Configuration -------------------------------------------------------------------------
