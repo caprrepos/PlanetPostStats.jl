@@ -93,14 +93,16 @@ the configuration) sequentially:
 
  1. [`load_run`](@ref) reads the monthly `scaleacc` files and evaluates derived
     variables.
- 2. For every variable, the monthly gridded field (`ij`), its zonal mean (`zm`), and its
+ 2. With `cfg.pressure_levels`, the 3D variables with `to_pressure = true` are
+    interpolated to pressure levels ([`interpolate_to_pressure`](@ref)), one variable
+    at a time, and assigned to the output files ([`output_entries`](@ref)).
+ 3. For every variable, the monthly gridded field (`ij`), its zonal mean (`zm`), and its
     global mean (`gm`) are formed ([`planet_means`](@ref)); for each
     of the three, the requested products of [`ALL_PRODUCTS`](@ref) are computed
     ([`annual_means`](@ref), [`seasonal_means`](@ref), [`multiyear_stats`](@ref),
     [`monthly_stats`](@ref), all built on `PlanetTools.PlanetStatistics`)
     and written immediately, so that only one variable's results are held in memory.
- 3. All output files of the run are closed (also on error), and the run's data are
-    released before the next run is loaded.
+ 4. The run's data are released before the next run is loaded.
 
 Output directory of run `r`: [`output_directory`](@ref)`(cfg, r)`, with subdirectories
 `MonthlyTs`, `AnnualTs`, `SeasonalTs`, `AnnualMeSd`, `SeasonalMeSd`, `MonthlyMeSd`.
@@ -136,6 +138,94 @@ function run_timeseries_statistics(cfg::TimeSeriesConfig; runs=cfg.runs)
 end
 
 """
+    OutputEntry
+
+One variable as written to one set of output files.
+
+# Fields
+
+  - `fileset::Symbol`: `:main` (regular files) or `:pressure` (additional files on
+    pressure levels, `PressureLevels(…; mode=:add)`).
+  - `name::String`: variable name.
+  - `attrib::OrderedDict{String,Any}`: output attributes.
+  - `vertical::Symbol`: `:none` (2D), `:model` (model levels), or `:pressure`.
+  - `data::Function`: function without arguments returning the monthly field; for
+    pressure levels it performs the interpolation, so that interpolated fields exist only
+    while the variable is processed.
+
+# Example
+
+```julia
+entries = output_entries(cfg, load_run(cfg, "MarsDustRun1"))
+[(e.fileset, e.name, e.vertical) for e in entries]
+```
+"""
+struct OutputEntry
+    fileset::Symbol
+    name::String
+    attrib::OrderedDict{String,Any}
+    vertical::Symbol
+    data::Function
+end
+
+"""
+    output_entries(cfg::TimeSeriesConfig, rd::RunData) -> Vector{OutputEntry}
+
+Assigns the variables of a run to the output file sets and vertical coordinates:
+
+  - without `cfg.pressure_levels`: all variables in `:main`, 3D variables on model levels;
+  - `mode = :add`: all variables in `:main` as above, plus every 3D variable with
+    `to_pressure = true` on pressure levels in `:pressure`;
+  - `mode = :replace`: all variables in `:main`, 3D variables with `to_pressure = true` on
+    pressure levels, the other 3D variables on model levels.
+
+The pressure-level fields are computed with [`interpolate_to_pressure`](@ref) from the
+monthly surface pressure `cfg.pressure_levels.surface_pressure` of the run.
+
+# Example
+
+```julia
+entries = output_entries(cfg, rd)
+count(e -> e.vertical == :pressure, entries)
+```
+"""
+function output_entries(cfg::TimeSeriesConfig, rd::RunData)
+    pl = cfg.pressure_levels
+    flags = pressure_flags(cfg)
+    main = OutputEntry[]
+    extra = OutputEntry[]
+    ps = nothing
+    if pl !== nothing
+        haskey(rd.variables, pl.surface_pressure) || throw(
+            ArgumentError("surface-pressure variable $(pl.surface_pressure) not loaded")
+        )
+        psvar = rd.variables[pl.surface_pressure]
+        psvar.is3d && throw(ArgumentError("$(pl.surface_pressure) is not a 2D variable"))
+        ps = psvar.data
+        rd.grid.plm === nothing &&
+            throw(ArgumentError("no reference pressures plm in the input files"))
+    end
+    for (name, v) in rd.variables
+        data = v.data
+        if pl !== nothing && v.is3d && get(flags, name, true)
+            interp =
+                () ->
+                    interpolate_to_pressure(data, ps, rd.grid.plm, cfg.vertical, pl.levels)
+            if pl.mode == :add
+                push!(main, OutputEntry(:main, name, v.attrib, :model, () -> data))
+                push!(extra, OutputEntry(:pressure, name, v.attrib, :pressure, interp))
+            else
+                push!(main, OutputEntry(:main, name, v.attrib, :pressure, interp))
+            end
+        else
+            vertical = v.is3d ? :model : :none
+            push!(main, OutputEntry(:main, name, v.attrib, vertical, () -> data))
+        end
+    end
+    return vcat(main, extra)
+end
+
+"""
     process_run(cfg::TimeSeriesConfig, run::String) -> RunResult
 
 Processes a single run (see [`run_timeseries_statistics`](@ref) for the steps).
@@ -158,7 +248,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
     thr = cfg.threshold
     w = month_weights(cfg.calendar, months)
     products = Set(cfg.products)
-    has3d = any(v.is3d for v in values(rd.variables))
+    entries = output_entries(cfg, rd)
     window = cfg.stat_period
     cal = cfg.calendar
     outdir = output_directory(cfg, run)
@@ -196,10 +286,34 @@ function process_run(cfg::TimeSeriesConfig, run::String)
 
     files = OrderedDict{Any,OutputFile}()
     sub(d) = joinpath(outdir, d)
+    filesets = unique(e.fileset for e in entries)
+    has_model = Dict(
+        fs => any(e -> e.fileset == fs && e.vertical == :model, entries) for fs in filesets
+    )
+    has_plev = Dict(
+        fs => any(e -> e.fileset == fs && e.vertical == :pressure, entries) for
+        fs in filesets
+    )
+    vtag(fs) =
+        if has_model[fs]
+            "l"
+        elseif has_plev[fs]
+            "p"
+        else
+            ""
+        end
     function open!(key, dir, kind, rep, prefix, tcm; kw...)
-        path = joinpath(sub(dir), output_filename(kind, cfg, rd, rep, has3d; prefix=prefix))
+        fs = first(key)
+        name = output_filename(kind, cfg, rd, rep, vtag(fs); prefix=prefix)
         files[key] = create_output_file(
-            path, cfg, rd, rep, has3d; time_cell_method=tcm, kw...
+            joinpath(sub(dir), name),
+            cfg,
+            rd,
+            rep,
+            has_model[fs];
+            has_plev=has_plev[fs],
+            time_cell_method=tcm,
+            kw...,
         )
         return nothing
     end
@@ -234,10 +348,10 @@ function process_run(cfg::TimeSeriesConfig, run::String)
             monthname(cal, last(months)),
             yyyy(last(months).year),
         )
-        for rep in (:ij, :zm, :gm)
+        for fs in filesets, rep in (:ij, :zm, :gm)
             if :mts in products
                 open!(
-                    (:mts, rep),
+                    (fs, :mts, rep),
                     "MonthlyTs",
                     "mts",
                     rep,
@@ -248,7 +362,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
             end
             if :ats in products && !isempty(years)
                 open!(
-                    (:ats, rep),
+                    (fs, :ats, rep),
                     "AnnualTs",
                     "ats",
                     rep,
@@ -261,7 +375,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                 label = period_label(months, years[stat_years], "_")
                 att = statattr(length(stat_years), "years", label)
                 open!(
-                    (:moa, rep),
+                    (fs, :moa, rep),
                     "AnnualMeSd",
                     "moa",
                     rep,
@@ -270,7 +384,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                     extra_attributes=att,
                 )
                 open!(
-                    (:soa, rep),
+                    (fs, :soa, rep),
                     "AnnualMeSd",
                     "soa",
                     rep,
@@ -283,7 +397,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                 ps = seasons[k]
                 if :sts in products && !isempty(ps)
                     open!(
-                        (:sts, rep, k),
+                        (fs, :sts, rep, k),
                         "SeasonalTs",
                         "sts",
                         rep,
@@ -296,7 +410,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                     label = period_label(months, ps[stat_seasons[k]], "_")
                     att = statattr(length(stat_seasons[k]), "seasons", label)
                     open!(
-                        (:mos, rep, k),
+                        (fs, :mos, rep, k),
                         "SeasonalMeSd",
                         "mos",
                         rep,
@@ -305,7 +419,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                         extra_attributes=att,
                     )
                     open!(
-                        (:sos, rep, k),
+                        (fs, :sos, rep, k),
                         "SeasonalMeSd",
                         "sos",
                         rep,
@@ -321,7 +435,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                 prefix = cal.month_names[1] * "-" * cal.month_names[12] * "_" * label
                 att = statattr(length(used), "years", label)
                 open!(
-                    (:mom, rep),
+                    (fs, :mom, rep),
                     "MonthlyMeSd",
                     "mom",
                     rep,
@@ -331,7 +445,7 @@ function process_run(cfg::TimeSeriesConfig, run::String)
                     extra_attributes=att,
                 )
                 open!(
-                    (:som, rep),
+                    (fs, :som, rep),
                     "MonthlyMeSd",
                     "som",
                     rep,
@@ -347,18 +461,21 @@ function process_run(cfg::TimeSeriesConfig, run::String)
         stat_year_range = contiguous_range(stat_years)
         stat_season_ranges = [contiguous_range(ix) for ix in stat_seasons]
         seasw = cfg.weight_seasons ? w : nothing
-        for (name, var) in rd.variables
-            @info "Run $run: processing $name"
-            att = var.attrib
-            is3d = var.is3d
-            x = var.data
+        for e in entries
+            name = e.name
+            fs = e.fileset
+            @info "Run $run: processing $name" * (e.vertical == :pressure ? " (plev)" : "")
+            att = e.attrib
+            is3d = e.vertical != :none
+            x = e.data()
             sm = planet_means(x, rd.grid.area; threshold=thr)
             # (field, availability) of the monthly ij, zm, gm representations; the gridded
             # monthly field enters with availability `nothing` (equal weights)
             monthly = (
                 :ij => (x, nothing), :zm => (sm.zm, sm.zm_w), :gm => (sm.gm, sm.gm_w)
             )
-            write!(key, data) = write_field!(files[key], cfg, name, data, att, is3d)
+            write!(key, data) =
+                write_field!(files[(fs, key...)], cfg, name, data, att, e.vertical)
 
             if :mts in products
                 for (rep, (xr, _)) in monthly

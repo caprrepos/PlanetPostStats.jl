@@ -126,7 +126,10 @@ function test_config(root, runs; kw...)
             InputGroup("aij", [InputVariable("prsurf"; units="hPa")]),
             InputGroup(
                 "aijl",
-                [InputVariable("z"; units="m"), InputVariable("airmass"; units="kg m-2")],
+                [
+                    InputVariable("z"; units="m"),
+                    InputVariable("airmass"; units="kg m-2", to_pressure=false),
+                ],
             ),
             InputGroup(
                 "taijl",
@@ -239,6 +242,53 @@ end
             test_config(root, ["A"]; derived=[DerivedVariable("x", ["nope"], sum_of())])
         )
         @test_throws ArgumentError validate_config(test_config(root, ["A"]; threshold=0.0))
+        pl = PressureLevels([6.0, 3.0])
+        @test validate_config(test_config(root, ["A"]; pressure_levels=pl)) isa
+            TimeSeriesConfig
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; pressure_levels=pl, vertical=nothing)
+        )
+        @test_throws ArgumentError validate_config(
+            test_config(
+                root, ["A"]; pressure_levels=PressureLevels([6.0]; surface_pressure="ps")
+            ),
+        )
+        @test_throws ArgumentError PressureLevels([6.0, -1.0])
+        @test_throws ArgumentError PressureLevels([6.0, 6.0])
+        @test_throws ArgumentError PressureLevels([6.0]; mode=:other)
+    end
+
+    @testset "pressure-level interpolation" begin
+        vc = VerticalCoordinate(3, 10.0, 1.0)      # layers 1, 2 σ; layer 3 pressure
+        @test layer_pressure(10.0, 9.0, 1, vc) ≈ 9.0
+        @test layer_pressure(5.5, 9.0, 1, vc) ≈ 1.0 + 8.0 / 9.0 * 4.5
+        @test layer_pressure(5.5, 0.5, 3, vc) == 0.5
+        plm = [9.0, 5.0, 0.5]
+        # x = ln p of the reference column: interpolation in ln p is exact
+        x = reshape(Float32[log(9.0), log(5.0), log(0.5)], 1, 1, 3, 1)
+        ps = fill(10.0f0, 1, 1, 1)
+        y = interpolate_to_pressure(x, ps, plm, vc, [12.0, 9.5, 7.0, 2.0, 0.5, 0.1])
+        @test size(y) == (1, 1, 6, 1)
+        @test isnan(y[1])                       # below the surface
+        @test y[2] ≈ log(9.0)                   # surface – lowest layer: lowest value
+        @test y[3] ≈ log(7.0)
+        @test y[4] ≈ log(2.0)
+        @test y[5] ≈ log(0.5)
+        @test isnan(y[6])                       # above the uppermost layer mid-point
+        # lower surface pressure shifts the σ layers; NaN surface pressure → all missing
+        ps2 = reshape(Float32[5.5, NaN], 2, 1, 1)
+        x2 = repeat(x, 2)
+        y2 = interpolate_to_pressure(x2, ps2, plm, vc, [7.0, 5.0])
+        p1 = layer_pressure(5.5, 9.0, 1, vc)
+        p2 = layer_pressure(5.5, 5.0, 2, vc)
+        wgt = (log(5.0) - log(p1)) / (log(p2) - log(p1))
+        @test isnan(y2[1, 1, 1, 1])
+        @test y2[1, 1, 2, 1] ≈ log(9.0) + wgt * (log(5.0) - log(9.0)) rtol = 1e-6
+        @test all(isnan, y2[2, 1, :, 1])
+        @test_throws ArgumentError interpolate_to_pressure(x, ps, reverse(plm), vc, [5.0])
+        @test_throws DimensionMismatch interpolate_to_pressure(
+            x, fill(10.0f0, 2, 1, 1), plm, vc, [5.0]
+        )
     end
 
     @testset "end-to-end" begin
@@ -345,6 +395,95 @@ end
             ),
         ) do ds
             @test ds["airmass"][1, 1, 1, 1] ≈ 3.0
+        end
+    end
+
+    @testset "pressure levels end-to-end" begin
+        root = mktempdir()
+        allmonths = yearmonth_range(YearMonth(1, 1), YearMonth(4, 12))
+        make_fake_run(root, "A", allmonths)
+        plev = [8.0, 6.0, 3.0, 1.5, 0.5]
+        vc = VerticalCoordinate(31, 6.86, 0.2)
+        plm = Float32[5, 1]
+        # expected value of z in column (i, j), month ym, at pressure P (both layers σ)
+        function z_expected(i, j, ym, P)
+            ps = Float32(prsurf_val(i, j, ym))
+            p1 = layer_pressure(ps, plm[1], 1, vc)
+            p2 = layer_pressure(ps, plm[2], 2, vc)
+            (P > ps || P < p2) && return NaN
+            P >= p1 && return z_val(i, j, 1, ym)
+            wgt = (log(P) - log(p1)) / (log(p2) - log(p1))
+            return z_val(i, j, 1, ym) + wgt * (z_val(i, j, 2, ym) - z_val(i, j, 1, ym))
+        end
+
+        # mode :add — additional files with tags ijp, zmp, gmp
+        cfg = test_config(
+            root,
+            ["A"];
+            pressure_levels=PressureLevels(plev),
+            products=[:mts, :ats, :moa],
+            output_dir="OutAdd",
+        )
+        res = only(run_timeseries_statistics(cfg))
+        @test length(res.files) == 2 * 3 * 4
+        @test all(isfile, res.files)
+        out = output_directory(cfg, "A")
+        NCDataset(joinpath(out, "MonthlyTs", "JAN0001-DEC0004.testA.ijp.mts.nc")) do ds
+            @test ds["plev"][:] ≈ plev
+            @test ds["plev"].attrib["units"] == "hPa"
+            @test ds["plev"].attrib["positive"] == "down"
+            @test haskey(ds.attrib, "Vertical_interpolation")
+            @test !haskey(ds, "airmass")         # to_pressure = false
+            @test !haskey(ds, "prsurf")          # 2D
+            @test !haskey(ds, "plm")
+            @test dimnames(ds["z"]) == ("lon", "lat", "plev", "time")
+            for (t, ym) in enumerate(allmonths),
+                k in eachindex(plev),
+                (i, j) in ((1, 1), (4, 3))
+
+                zexp = z_expected(i, j, ym, plev[k])
+                if isnan(zexp)
+                    @test ismissing(ds["z"][i, j, k, t])
+                else
+                    @test ds["z"][i, j, k, t] ≈ zexp rtol = 1e-5
+                end
+            end
+            # constant-in-height mixing ratios stay constant
+            @test ds["Clay"][2, 2, 3, 1] ≈ 101.0f-8 rtol = 1e-5
+            @test ds["PM4Dust"][2, 2, 3, 1] ≈ 151.0f-8 rtol = 1e-5
+        end
+        # model-level files unchanged
+        NCDataset(joinpath(out, "MonthlyTs", "JAN0001-DEC0004.testA.ijl.mts.nc")) do ds
+            @test !haskey(ds, "plev")
+            @test haskey(ds, "airmass")
+            @test ds["z"][2, 3, 2, 1] ≈ z_val(2, 3, 2, YearMonth(1, 1))
+        end
+        # 8 hPa is below the surface in year 1 (ps ≈ 7 hPa), above it in years 2–4
+        NCDataset(joinpath(out, "AnnualTs", "ANN_0001-0004.testA.gmp.ats.nc")) do ds
+            @test ismissing(ds["z"][1, 1, 1, 1])
+            @test !ismissing(ds["z"][1, 1, 1, 2])
+            @test ds["z"][1, 1, 3, 1] > ds["z"][1, 1, 2, 1]
+        end
+
+        # mode :replace — pressure-level fields in the regular files
+        cfgr = test_config(
+            root,
+            ["A"];
+            pressure_levels=PressureLevels(plev; mode=:replace),
+            products=[:mts],
+            output_dir="OutRep",
+        )
+        resr = only(run_timeseries_statistics(cfgr))
+        @test length(resr.files) == 3
+        NCDataset(
+            joinpath(
+                output_directory(cfgr, "A"), "MonthlyTs", "JAN0001-DEC0004.testA.zml.mts.nc"
+            ),
+        ) do ds
+            @test dimnames(ds["z"]) == ("lon", "lat", "plev", "time")
+            @test dimnames(ds["airmass"]) == ("lon", "lat", "level", "time")
+            @test dimnames(ds["prsurf"]) == ("lon", "lat", "time")
+            @test haskey(ds, "plm")
         end
     end
 end

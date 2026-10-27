@@ -2,7 +2,7 @@
 # to user is passed through these types instead of being hard-coded as global constants.
 
 """
-    InputVariable(name; scale=1.0, units="", long_name="")
+    InputVariable(name; scale=1.0, units="", long_name="", to_pressure=true)
 
 A variable to be read from a `scaleacc` output product (see [`InputGroup`](@ref)).
 
@@ -24,14 +24,22 @@ file are applied by NCDatasets when reading (CF decoding) before `scale` is appl
   - `units::AbstractString = ""`: units after scaling; empty → taken from the file's
     `units` attribute (only sensible if `scale == 1`).
   - `long_name::AbstractString = ""`: descriptive name; empty → the file's `long_name`.
+  - `to_pressure::Bool = true`: for a 3D variable, whether it is interpolated to pressure
+    levels when `TimeSeriesConfig.pressure_levels` is set (see [`PressureLevels`](@ref)).
+    Set it to `false` for quantities that are integrals over a model layer (e.g. the air
+    mass per layer in kg m⁻²), which have no meaning at a pressure level; such variables
+    stay on the model levels. Ignored for 2D variables.
 
 # Example
 
 ```julia
 julia> v = InputVariable("Clay"; scale=1e-8, units="kg kg-1");
 
-julia> v.scale
-1.0e-8
+julia> v.scale, v.to_pressure
+(1.0e-8, true)
+
+julia> InputVariable("airmass"; units="kg m-2", to_pressure=false).to_pressure
+false
 ```
 """
 struct InputVariable
@@ -39,6 +47,7 @@ struct InputVariable
     scale::Float64
     units::String
     long_name::String
+    to_pressure::Bool
 end
 
 function InputVariable(
@@ -46,10 +55,13 @@ function InputVariable(
     scale::Real=1.0,
     units::AbstractString="",
     long_name::AbstractString="",
+    to_pressure::Bool=true,
 )
     isfinite(scale) && scale != 0 ||
         throw(ArgumentError("scale of $name must be finite and nonzero"))
-    return InputVariable(String(name), Float64(scale), String(units), String(long_name))
+    return InputVariable(
+        String(name), Float64(scale), String(units), String(long_name), to_pressure
+    )
 end
 
 """
@@ -84,7 +96,7 @@ function InputGroup(product::AbstractString, variables::AbstractVector)
 end
 
 """
-    DerivedVariable(name, sources, combine; units, long_name)
+    DerivedVariable(name, sources, combine; units, long_name, to_pressure=true)
 
 A variable computed from already loaded variables (input or earlier derived variables)
 after reading, e.g. the accumulated dust mass mixing ratio over several size bins.
@@ -108,6 +120,8 @@ chain of accumulated sums, [`cumulative_sums`](@ref).
 
   - `units::AbstractString = ""`: units of the result; empty → units of the first source.
   - `long_name::AbstractString = name`: descriptive name.
+  - `to_pressure::Bool = true`: for a 3D result, whether it is interpolated to pressure
+    levels when `TimeSeriesConfig.pressure_levels` is set (see [`InputVariable`](@ref)).
 
 # Example
 
@@ -127,6 +141,7 @@ struct DerivedVariable{F}
     combine::F
     units::String
     long_name::String
+    to_pressure::Bool
 end
 
 function DerivedVariable(
@@ -135,10 +150,16 @@ function DerivedVariable(
     combine;
     units::AbstractString="",
     long_name::AbstractString=String(name),
+    to_pressure::Bool=true,
 )
     isempty(sources) && throw(ArgumentError("derived variable $name has no sources"))
     return DerivedVariable(
-        String(name), String.(sources), combine, String(units), String(long_name)
+        String(name),
+        String.(sources),
+        combine,
+        String(units),
+        String(long_name),
+        to_pressure,
     )
 end
 
@@ -325,6 +346,71 @@ struct VerticalCoordinate
 end
 
 """
+    PressureLevels(levels; surface_pressure="prsurf", mode=:add)
+
+Interpolation of the 3D variables from the hybrid σ–pressure model layers of
+ModelE/ROCKE-3D to the pressure levels `levels` in the output (see
+[`interpolate_to_pressure`](@ref) for the method). Set as
+`TimeSeriesConfig.pressure_levels`; requires `TimeSeriesConfig.vertical`
+([`VerticalCoordinate`](@ref)) and the reference mid-layer pressures `plm` in the input
+files.
+
+The interpolation is done on the monthly means of each column, using the monthly mean
+surface pressure of the column, before any temporal or spatial averaging. All products
+(time series, multi-year statistics; gridded, zonal, and global means) are then computed
+on the pressure levels. Pressure levels below the local surface are missing, so zonal
+and global means at high pressures cover only the area above the surface and are subject
+to `TimeSeriesConfig.threshold`.
+
+Variables with `to_pressure = false` ([`InputVariable`](@ref),
+[`DerivedVariable`](@ref)) and 2D variables are not interpolated.
+
+# Arguments
+
+  - `levels`: pressure levels in hPa (the unit of the surface pressure and of `plm`), any
+    order, positive and unique; written as coordinate `plev` in the given order.
+
+# Keyword arguments
+
+  - `surface_pressure::AbstractString = "prsurf"`: name of the 2D surface-pressure
+    variable (hPa) among the configured variables.
+  - `mode::Symbol = :add`:
+      - `:add` — the model-level output is written as without pressure levels, and the
+        interpolated variables are written in addition to separate files with the tags
+        `ijp`, `zmp`, `gmp`;
+      - `:replace` — the interpolated variables are written on pressure levels instead
+        of model levels into the regular files; 3D variables with `to_pressure = false`
+        stay on model levels in the same files.
+
+# Example
+
+```julia
+julia> pl = PressureLevels([6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1]);
+
+julia> pl.mode, length(pl.levels)
+(:add, 8)
+```
+"""
+struct PressureLevels
+    levels::Vector{Float64}
+    surface_pressure::String
+    mode::Symbol
+    function PressureLevels(
+        levels::AbstractVector{<:Real};
+        surface_pressure::AbstractString="prsurf",
+        mode::Symbol=:add,
+    )
+        isempty(levels) && throw(ArgumentError("no pressure levels given"))
+        all(p -> isfinite(p) && p > 0, levels) ||
+            throw(ArgumentError("pressure levels must be positive and finite"))
+        allunique(levels) || throw(ArgumentError("pressure levels must be unique"))
+        mode in (:add, :replace) ||
+            throw(ArgumentError("mode must be :add or :replace, got :$mode"))
+        return new(Float64.(collect(levels)), String(surface_pressure), mode)
+    end
+end
+
+"""
     scaleacc_filename(ym::YearMonth, product, run; ext=".nc") -> String
 
 Default name of a monthly `scaleacc` output file, `<MON><YYYY>.<product><run><ext>`
@@ -407,7 +493,10 @@ post-processing performed by [`run_timeseries_statistics`](@ref).
   - `calendar = EARTH_NOLEAP_CALENDAR`: [`PlanetCalendar`](@ref).
   - `seasons = EARTH_SEASONS`: vector of [`SeasonSpec`](@ref).
   - `time_axis = TimeAxis()`: numerical time coordinate, see [`TimeAxis`](@ref).
-  - `vertical = nothing`: [`VerticalCoordinate`](@ref) metadata for 3D output.
+  - `vertical = nothing`: [`VerticalCoordinate`](@ref) of the model layers; written as
+    metadata to 3D output and needed for `pressure_levels`.
+  - `pressure_levels = nothing`: [`PressureLevels`](@ref) for the interpolation of the 3D
+    variables to pressure levels; `nothing` → output on model levels only.
   - `threshold = 80.0`: validity threshold in percent (see module documentation).
   - `weight_seasons = true`: weight months by their length in seasonal means, as in
     annual means (on Mars the month lengths range from 46 to 66 sols); `false` gives
@@ -456,6 +545,7 @@ Base.@kwdef struct TimeSeriesConfig
     seasons::Vector{SeasonSpec} = EARTH_SEASONS
     time_axis::TimeAxis = TimeAxis()
     vertical::Union{Nothing,VerticalCoordinate} = nothing
+    pressure_levels::Union{Nothing,PressureLevels} = nothing
     threshold::Float64 = 80.0
     weight_seasons::Bool = true
     products::Vector{Symbol} = collect(ALL_PRODUCTS)
@@ -533,9 +623,10 @@ Checks a configuration for consistency and throws an `ArgumentError` describing 
 first problem found. Checks: non-empty runs and groups; unique variable names; sources of
 derived variables defined before use; valid simulation and statistics periods, with the
 statistics window overlapping the simulation period; threshold in (0, 100]; known
-products; `deflatelevel` in 0:9; no reserved names (`lon`, `lat`, `level`, `time`,
-`year`, `month`, `plm`, `ple`, area variable, `LS1`, `Psf`, `Ptop`) used as variable
-names. Returns `cfg` so that it can be chained.
+products; `deflatelevel` in 0:9; for `pressure_levels`, a `vertical` coordinate and a
+configured surface-pressure variable; no reserved names (`lon`, `lat`, `level`, `plev`,
+`time`, `year`, `month`, `plm`, `ple`, area variable, `axyp`, `Dates`, `LS1`, `Psf`,
+`Ptop`) used as variable names. Returns `cfg` so that it can be chained.
 
 # Example
 
@@ -555,6 +646,7 @@ function validate_config(cfg::TimeSeriesConfig)
         "lon",
         "lat",
         "level",
+        "plev",
         "time",
         "year",
         "month",
@@ -593,5 +685,15 @@ function validate_config(cfg::TimeSeriesConfig)
     0 <= cfg.deflatelevel <= 9 || throw(ArgumentError("deflatelevel must be in 0:9"))
     allunique(s.name for s in cfg.seasons) ||
         throw(ArgumentError("season names are not unique"))
+    pl = cfg.pressure_levels
+    if pl !== nothing
+        cfg.vertical === nothing &&
+            throw(ArgumentError("pressure_levels requires the vertical coordinate"))
+        pl.surface_pressure in names || throw(
+            ArgumentError(
+                "surface-pressure variable $(pl.surface_pressure) is not " * "configured",
+            ),
+        )
+    end
     return cfg
 end

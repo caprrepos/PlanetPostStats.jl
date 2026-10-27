@@ -23,6 +23,11 @@ mixed; they are written into the same files. Files containing at least one 3D va
 get the representation tags `ijl`, `zml`, `gml` (e.g. `*.ijl.mts.nc`), files with only 2D
 variables get `ij`, `zm`, `gm`.
 
+Optionally ([`PressureLevels`](@ref)), 3D variables are interpolated from the hybrid
+σ–pressure model layers to pressure levels (linear in `ln p`, missing below the
+surface), either into additional files with the tags `ijp`, `zmp`, `gmp` or in place of
+the model-level fields.
+
 # Workflow
 
 All settings that may differ between simulations or users are collected in a
@@ -80,6 +85,7 @@ annual_summary(results)
 """
 module TimeSeriesMeSd
 
+using Base.Threads: @threads
 using Dates: Dates, Date, UTC, Year
 using NCDatasets: NCDatasets, NCDataset, dimnames
 using OrderedCollections: OrderedDict
@@ -93,6 +99,7 @@ using PlanetTools.DerivePhysicsVariablesModelE: DerivePhysicsVariablesModelE
 include("calendar.jl")
 include("config.jl")
 include("statistics.jl")
+include("pressure_levels.jl")
 include("scaleacc_input.jl")
 include("netcdf_output.jl")
 include("driver.jl")
@@ -106,6 +113,7 @@ export annual_periods, seasonal_periods, climatology_slots, period_in_window
 
 # Configuration
 export InputVariable, InputGroup, DerivedVariable, VerticalCoordinate, TimeSeriesConfig
+export PressureLevels, interpolate_to_pressure, layer_pressure
 export ALL_PRODUCTS, sum_of, cumulative_sums, dust_mass_classes, scaleacc_filename
 export validate_config
 export output_directory

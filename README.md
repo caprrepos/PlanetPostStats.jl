@@ -62,6 +62,7 @@ All settings are fields of `TimeSeriesConfig`; see its docstring for details.
 | `seasons` | `SeasonSpec`s (`MARS_SEASONS`, `EARTH_SEASONS`) |
 | `time_axis` | reference month and units of the time coordinate (`TimeAxis`) |
 | `vertical` | hybrid σ–p coordinate metadata `LS1`, `Psf`, `Ptop` (`VerticalCoordinate`) |
+| `pressure_levels` | optional interpolation of 3D variables to pressure levels (`PressureLevels`, see below) |
 | `threshold` | minimum percentage of valid data for every averaging step (default 80) |
 | `weight_seasons` | weight months by their length in seasonal means (default `true`) |
 | `products` | subset of `:mts, :ats, :sts, :moa, :mos, :mom` |
@@ -73,7 +74,8 @@ All settings are fields of `TimeSeriesConfig`; see its docstring for details.
 
 Per run, in `<simpath>/<run>/<output_dir>/` (or `<output_root>/<run>/<output_dir>/`). The
 tag is `ij`, `zm`, `gm` (gridded, zonal mean, global mean), or `ijl`, `zml`, `gml` if the
-file contains 3D variables.
+file contains 3D variables on model levels, or `ijp`, `zmp`, `gmp` if it contains 3D
+variables only on pressure levels.
 
 | Directory      | Files | Content |
 |:---------------|:------|:--------|
@@ -89,6 +91,30 @@ each period) with the CF attributes `calendar` (`"mars"`, `"noleap"`, …) and
 `month_lengths`, the integer variables `year(time)` and `month(time)`, and the date
 strings `Dates(time)`. `PlanetTools.readnetcdf` returns `time` as numbers. Missing data
 are stored as `_FillValue` (`fill_value`, default `-1f30`).
+
+## Pressure levels
+
+With `pressure_levels = PressureLevels(levels; surface_pressure="prsurf", mode=:add)`,
+3D variables are interpolated from the hybrid σ–pressure model layers to the pressure
+levels `levels` (hPa), written as coordinate `plev`:
+
+  - The monthly mean fields are interpolated with the monthly mean surface pressure
+    (variable `surface_pressure`, which must be configured) before any averaging. The
+    mid-layer pressures are `p = Ptop + σ (ps − Ptop)`, `σ = (plm − Ptop)/(Psf − Ptop)`,
+    for the layers below `LS1` and `p = plm` above (`vertical` is required).
+  - Interpolation is linear in `ln p` between layer mid-points. Levels below the surface
+    and above the mid-point of the uppermost layer are missing; between the surface and
+    the mid-point of the lowest layer, the value of the lowest layer is used.
+  - Zonal and global means, temporal means, and multi-year statistics of the
+    pressure-level fields are computed from the interpolated monthly fields with the
+    same validity `threshold`, so means at levels that are below the surface in part of
+    the area or period are missing if less than `threshold` % of the data are valid.
+  - `mode = :add` writes additional files (tags `ijp`, `zmp`, `gmp`) with the
+    interpolated 3D variables; the regular files are unchanged. `mode = :replace` writes
+    the interpolated fields in place of the model-level fields into the regular files.
+  - Variables with `to_pressure = false` (`InputVariable`, `DerivedVariable`), e.g.
+    layer-integrated quantities such as the air mass per area, are not interpolated
+    and stay on model levels.
 
 ## Statistics
 

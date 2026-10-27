@@ -20,7 +20,12 @@ const DUST_BINS = ["Clay", "Silt1", "Silt2", "Silt3", "Silt4"]
 groups = [
     InputGroup("aij", [InputVariable("prsurf"; units="hPa")]),
     InputGroup(
-        "aijl", [InputVariable("z"; units="m"), InputVariable("airmass"; units="kg m-2")]
+        "aijl",
+        [
+            InputVariable("z"; units="m"),
+            # layer-integrated quantity: stays on model levels with pressure_levels
+            InputVariable("airmass"; units="kg m-2", to_pressure=false),
+        ],
     ),
     InputGroup("taijl", [InputVariable(b; scale=1e-8, units="kg kg-1") for b in DUST_BINS]),
 ]
@@ -56,6 +61,9 @@ cfg = TimeSeriesConfig(;
     # year 1 / month 1 gets time = 1
     time_axis=TimeAxis(; reference=YearMonth(0, 12), units="months since 0023-12-56"),
     vertical=VerticalCoordinate(31, 6.86, 0.2),
+    # optional: 3D variables also on pressure levels (hPa) in files *.ijp/zmp/gmp.*.nc;
+    # mode=:replace writes them instead of the model levels into the regular files
+    # pressure_levels=PressureLevels([7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1]),
     threshold=80.0,
     weight_seasons=true,       # false: equal weights for the months of a season
     output_dir="Tracermass3d",

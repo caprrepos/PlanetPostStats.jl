@@ -1,22 +1,23 @@
 # Writing the output NetCDF files.
 
 """
-    REP_TAGS
+    rep_tag(rep::Symbol, vtag::AbstractString) -> String
 
-File name tags of the spatial representations, for files with only 2D variables
-(`false`) and with at least one 3D variable (`true`).
+File-name tag of the spatial representation `rep` (`:ij`, `:zm`, `:gm`) followed by the
+vertical tag `vtag`: `""` for files with only 2D variables, `"l"` for files with
+variables on model levels, `"p"` for files with variables on pressure levels only.
 
 # Example
 
 ```julia
-julia> REP_TAGS[true][:zm]
-"zml"
+julia> rep_tag(:zm, "l"), rep_tag(:gm, "p"), rep_tag(:ij, "")
+("zml", "gmp", "ij")
 ```
 """
-const REP_TAGS = Dict(
-    false => Dict(:ij => "ij", :zm => "zm", :gm => "gm"),
-    true => Dict(:ij => "ijl", :zm => "zml", :gm => "gml"),
-)
+function rep_tag(rep::Symbol, vtag::AbstractString)
+    base = Dict(:ij => "ij", :zm => "zm", :gm => "gm")
+    return base[rep] * vtag
+end
 
 """
     REP_CELL_METHODS
@@ -54,7 +55,7 @@ with [`write_field!`](@ref), which appends to the file with
 ```julia
 of = create_output_file("x.nc", cfg, rd, :gm, true; time_cell_method="time: monthly mean",
                         time_months=rd.months)
-write_field!(of, cfg, "z", gm_of_z, rd.variables["z"].attrib, true)
+write_field!(of, cfg, "z", gm_of_z, rd.variables["z"].attrib, :model)
 ```
 """
 struct OutputFile
@@ -116,8 +117,9 @@ function time_attributes(cfg::TimeSeriesConfig)
 end
 
 """
-    create_output_file(path, cfg, rd, rep, has3d; time_cell_method, time_months=nothing,
-                       climatology=false, extra_attributes=OrderedDict()) -> OutputFile
+    create_output_file(path, cfg, rd, rep, has_model; has_plev=false, time_cell_method,
+                       time_months=nothing, climatology=false,
+                       extra_attributes=OrderedDict()) -> OutputFile
 
 Creates the NetCDF file `path` (parent directories are created as needed) with
 `PlanetTools.ReadWritePlanet.writenetcdf` and writes dimensions, coordinates, metadata,
@@ -126,20 +128,23 @@ grid-cell area, and vertical-coordinate scalars. Data variables are added afterw
 
 Contents:
 
-  - dimensions and coordinates `lon`, `lat`, the vertical dimension (if `has3d`) and,
-    for time series and climatologies, the unlimited dimension `time`;
+  - dimensions and coordinates `lon`, `lat`, the model-layer dimension (if `has_model`),
+    the pressure-level dimension `plev` (if `has_plev`; hPa, values of
+    `cfg.pressure_levels.levels`), and, for time series and climatologies, the unlimited
+    dimension `time`;
   - for time series: `time` (months from `cfg.time_axis.reference` to the first month of
     each period, attributes from [`time_attributes`](@ref)), the integer variables
     `year(time)` and `month(time)`, and the date strings `Dates(time)`
     (`"YYYY-MM-01"`, as always written by `writenetcdf`);
   - for climatologies (`mom`, `som`): `time` = 1 … 12 and `month(time)`;
   - `plm`, `ple` (reference pressures on the vertical dimension) and `LS1`, `Psf`, `Ptop`
-    (if `cfg.vertical` is set) for files with 3D variables;
+    (if `cfg.vertical` is set) for files with variables on model levels;
   - the grid-cell area `axyp` (the name `writenetcdf` uses): cell areas (`ij`), the zonal mean of the
     cell areas (`zm`), or the total planetary area (`gm`);
   - global attributes: `Experiment`, `cfg.global_attributes`, `Planet`,
     `Missing_data_threshold_percent`, `Seasonal_means_weighted_by_month_length`,
-    `Standard_deviation`, `extra_attributes`, `Software`, `File_creation_time`.
+    `Standard_deviation`, `Vertical_interpolation` (files with pressure levels),
+    `extra_attributes`, `Software`, `File_creation_time`.
 
 # Arguments
 
@@ -148,10 +153,11 @@ Contents:
   - `rd::RunData`: data of the run (grid, run identifier).
   - `rep::Symbol`: `:ij`, `:zm` (`lon` of length 1, value 0), or `:gm` (`lon` and `lat` of
     length 1, value 0).
-  - `has3d::Bool`: whether the file will contain 3D variables.
+  - `has_model::Bool`: whether the file will contain variables on model levels.
 
 # Keyword arguments
 
+  - `has_plev::Bool = false`: whether the file will contain variables on pressure levels.
   - `time_cell_method::AbstractString`: temporal part of `cell_methods`.
   - `time_months = nothing`: first month of every time step for time-series files.
   - `climatology::Bool = false`: annual-cycle file with `time` = 1 … 12.
@@ -170,7 +176,8 @@ function create_output_file(
     cfg::TimeSeriesConfig,
     rd::RunData,
     rep::Symbol,
-    has3d::Bool;
+    has_model::Bool;
+    has_plev::Bool=false,
     time_cell_method::AbstractString,
     time_months::Union{Nothing,AbstractVector{YearMonth}}=nothing,
     climatology::Bool=false,
@@ -191,6 +198,7 @@ function create_output_file(
     gattr["Missing_data_threshold_percent"] = cfg.threshold
     gattr["Seasonal_means_weighted_by_month_length"] = cfg.weight_seasons ? "true" : "false"
     gattr["Standard_deviation"] = "sample (n - 1), weighted by availability"
+    has_plev && (gattr["Vertical_interpolation"] = PRESSURE_INTERPOLATION_NOTE)
     merge!(gattr, extra_attributes)
     gattr["Software"] = software_version()
     gattr["File_creation_time"] = string(Dates.now(UTC)) * " UTC"
@@ -212,10 +220,22 @@ function create_output_file(
             ),
         ),
     ]
-    if has3d
+    if has_model
         grid.level === nothing &&
             throw(ArgumentError("3D output requested but grid has no levels"))
         push!(coords, (lev, grid.level, OrderedDict("long_name" => "Layer", "axis" => "Z")))
+    end
+    if has_plev
+        cfg.pressure_levels === nothing &&
+            throw(ArgumentError("pressure-level output requested but not configured"))
+        pattr = OrderedDict{String,Any}(
+            "units" => "hPa",
+            "long_name" => "Pressure level",
+            "standard_name" => "air_pressure",
+            "positive" => "down",
+        )
+        has_model || (pattr["axis"] = "Z")
+        push!(coords, ("plev", Float32.(cfg.pressure_levels.levels), pattr))
     end
     has_time = time_months !== nothing || climatology
     if climatology
@@ -296,7 +316,7 @@ function create_output_file(
     end
 
     # vertical coordinate metadata
-    if has3d
+    if has_model
         for (name, values, long) in (
             ("plm", grid.plm, "Mid layer pressure reference level"),
             ("ple", grid.ple, "Upper edge pressure reference level"),
@@ -344,13 +364,14 @@ function create_output_file(
 end
 
 """
-    write_field!(of::OutputFile, cfg, name, data, attrib, is3d)
+    write_field!(of::OutputFile, cfg, name, data, attrib, vertical::Symbol)
 
 Appends the `Float32` variable `name` with values `data` to the output file `of` with
 `PlanetTools.ReadWritePlanet.writenetcdf`.
 
-`data` must have the dimensions `(lon, lat[, level][, time])` of the file (singleton
-`lon`/`lat` for `zm`/`gm` files). Missing values (`NaN`) are written as missing, i.e. as
+`data` must have the dimensions `(lon, lat[, level or plev][, time])` of the file
+(singleton `lon`/`lat` for `zm`/`gm` files); `vertical` is `:none` for 2D variables,
+`:model` for model levels, and `:pressure` for pressure levels. Missing values (`NaN`) are written as missing, i.e. as
 `cfg.fill_value`, which is set as `_FillValue`; `writenetcdf` encodes them correctly. The
 attribute `cell_methods` is composed from the file's temporal method and its spatial
 representation, e.g. `"time: annual mean; lon: mean"`; `attrib` (e.g. `units`,
@@ -359,7 +380,7 @@ representation, e.g. `"time: annual mean; lon: mean"`; `attrib` (e.g. `units`,
 # Example
 
 ```julia
-write_field!(of, cfg, "prsurf", ats_gm, OrderedDict("units" => "hPa"), false)
+write_field!(of, cfg, "prsurf", ats_gm, OrderedDict("units" => "hPa"), :none)
 ```
 """
 function write_field!(
@@ -368,10 +389,16 @@ function write_field!(
     name::AbstractString,
     data::AbstractArray{<:Real},
     attrib::AbstractDict,
-    is3d::Bool,
+    vertical::Symbol,
 )
     dims = String["lon", "lat"]
-    is3d && push!(dims, of.level_dimname)
+    if vertical == :model
+        push!(dims, of.level_dimname)
+    elseif vertical == :pressure
+        push!(dims, "plev")
+    elseif vertical != :none
+        throw(ArgumentError("unknown vertical coordinate :$vertical"))
+    end
     of.has_time && push!(dims, "time")
     ndims(data) == length(dims) || throw(
         DimensionMismatch("$name: data has $(ndims(data)) dimensions, file expects $dims"),
@@ -392,15 +419,16 @@ function write_field!(
 end
 
 """
-    output_filename(kind, cfg, rd, rep, has3d; prefix) -> String
+    output_filename(kind, cfg, rd, rep, vtag; prefix) -> String
 
-Output file name `<prefix>.<output_name><run>.<tag>.<kind>.nc`, with `tag` from [`REP_TAGS`](@ref) and
-`kind` one of `mts, ats, sts, moa, soa, mos, sos, mom, som`.
+Output file name `<prefix>.<output_name><run>.<tag>.<kind>.nc`, with `tag` =
+[`rep_tag`](@ref)`(rep, vtag)` and `kind` one of `mts, ats, sts, moa, soa, mos, sos, mom,
+som`.
 
 # Example
 
 ```julia
-julia> output_filename("moa", cfg, rd, :gm, false; prefix="ANN_0003_0020")
+julia> output_filename("moa", cfg, rd, :gm, ""; prefix="ANN_0003_0020")
 "ANN_0003_0020.prsurfRUN1.gm.moa.nc"
 ```
 """
@@ -409,10 +437,10 @@ function output_filename(
     cfg::TimeSeriesConfig,
     rd::RunData,
     rep::Symbol,
-    has3d::Bool;
+    vtag::AbstractString;
     prefix::AbstractString,
 )
     return string(
-        prefix, ".", cfg.output_name, rd.run, ".", REP_TAGS[has3d][rep], ".", kind, ".nc"
+        prefix, ".", cfg.output_name, rd.run, ".", rep_tag(rep, vtag), ".", kind, ".nc"
     )
 end
