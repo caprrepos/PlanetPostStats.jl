@@ -114,6 +114,7 @@ export annual_periods, seasonal_periods, climatology_slots, period_in_window
 # Configuration
 export InputVariable, InputGroup, DerivedVariable, VerticalCoordinate, TimeSeriesConfig
 export PressureLevels, interpolate_to_pressure, layer_pressure
+export DEFAULT_PRESSURE_LEVELS, default_pressure_levels, output_pressure_levels
 export ALL_PRODUCTS, sum_of, cumulative_sums, dust_mass_classes, scaleacc_filename
 export validate_config
 export output_directory

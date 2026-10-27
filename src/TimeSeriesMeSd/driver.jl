@@ -191,6 +191,7 @@ count(e -> e.vertical == :pressure, entries)
 """
 function output_entries(cfg::TimeSeriesConfig, rd::RunData)
     pl = cfg.pressure_levels
+    plev = pl === nothing ? nothing : output_pressure_levels(cfg)
     flags = pressure_flags(cfg)
     main = OutputEntry[]
     extra = OutputEntry[]
@@ -209,8 +210,7 @@ function output_entries(cfg::TimeSeriesConfig, rd::RunData)
         data = v.data
         if pl !== nothing && v.is3d && get(flags, name, true)
             interp =
-                () ->
-                    interpolate_to_pressure(data, ps, rd.grid.plm, cfg.vertical, pl.levels)
+                () -> interpolate_to_pressure(data, ps, rd.grid.plm, cfg.vertical, plev)
             if pl.mode == :add
                 push!(main, OutputEntry(:main, name, v.attrib, :model, () -> data))
                 push!(extra, OutputEntry(:pressure, name, v.attrib, :pressure, interp))

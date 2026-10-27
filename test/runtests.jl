@@ -256,6 +256,34 @@ end
         @test_throws ArgumentError PressureLevels([6.0, -1.0])
         @test_throws ArgumentError PressureLevels([6.0, 6.0])
         @test_throws ArgumentError PressureLevels([6.0]; mode=:other)
+        # planet defaults, overridable
+        @test PressureLevels().levels === nothing
+        lev = default_pressure_levels("Mars")
+        @test length(lev) == 43 && lev[1] == 18.789 && lev[end] == 0.099
+        @test issorted(lev; rev=true)
+        cfgd = test_config(root, ["A"]; pressure_levels=PressureLevels())
+        @test output_pressure_levels(cfgd) == lev
+        cfgo = test_config(root, ["A"]; pressure_levels=PressureLevels([5.0, 1.0]))
+        @test output_pressure_levels(cfgo) == [5.0, 1.0]
+        @test_throws ArgumentError default_pressure_levels("Titan")
+        @test_throws ArgumentError validate_config(
+            test_config(
+                root,
+                ["A"];
+                calendar=EARTH_NOLEAP_CALENDAR,
+                seasons=EARTH_SEASONS,
+                pressure_levels=PressureLevels(),
+            ),
+        )
+        @test validate_config(
+            test_config(
+                root,
+                ["A"];
+                calendar=EARTH_NOLEAP_CALENDAR,
+                seasons=EARTH_SEASONS,
+                pressure_levels=PressureLevels([500.0]),
+            ),
+        ) isa TimeSeriesConfig
     end
 
     @testset "pressure-level interpolation" begin
@@ -469,7 +497,7 @@ end
         cfgr = test_config(
             root,
             ["A"];
-            pressure_levels=PressureLevels(plev; mode=:replace),
+            pressure_levels=PressureLevels(; mode=:replace),   # Mars default levels
             products=[:mts],
             output_dir="OutRep",
         )
@@ -481,6 +509,7 @@ end
             ),
         ) do ds
             @test dimnames(ds["z"]) == ("lon", "lat", "plev", "time")
+            @test ds["plev"][:] ≈ DEFAULT_PRESSURE_LEVELS["mars"]
             @test dimnames(ds["airmass"]) == ("lon", "lat", "level", "time")
             @test dimnames(ds["prsurf"]) == ("lon", "lat", "time")
             @test haskey(ds, "plm")

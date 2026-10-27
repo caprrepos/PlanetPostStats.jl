@@ -96,7 +96,12 @@ are stored as `_FillValue` (`fill_value`, default `-1f30`).
 
 With `pressure_levels = PressureLevels(levels; surface_pressure="prsurf", mode=:add)`,
 3D variables are interpolated from the hybrid σ–pressure model layers to the pressure
-levels `levels` (hPa), written as coordinate `plev`:
+levels `levels` (hPa), written as coordinate `plev`. Without `levels`
+(`PressureLevels()`), the default levels of the planet given by `calendar.name` are used
+(`DEFAULT_PRESSURE_LEVELS`, `default_pressure_levels`); explicit `levels` override them.
+Defaults are defined for Mars: 43 levels from 18.789 hPa to 0.099 hPa, approximately
+equidistant in `ln p` (ratio ≈ 0.88).
+
 
   - The monthly mean fields are interpolated with the monthly mean surface pressure
     (variable `surface_pressure`, which must be configured) before any averaging. The

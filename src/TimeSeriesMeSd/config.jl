@@ -346,14 +346,117 @@ struct VerticalCoordinate
 end
 
 """
-    PressureLevels(levels; surface_pressure="prsurf", mode=:add)
+    DEFAULT_PRESSURE_LEVELS
+
+Default output pressure levels (hPa) by planet, used by [`PressureLevels`](@ref) when no
+levels are given. The key is the lower-case planet name, i.e. the lower-case `name` of
+the [`PlanetCalendar`](@ref) of the configuration (`"mars"` for
+[`MARS_CALENDAR`](@ref)). Further planets can be added with
+`DEFAULT_PRESSURE_LEVELS["<planet>"] = [...]`.
+
+  - `"mars"`: 43 levels from 18.789 hPa to 0.099 hPa, approximately equidistant in
+    `ln p` (ratio ≈ 0.88 between neighboring levels).
+
+# Example
+
+```julia
+julia> lev = DEFAULT_PRESSURE_LEVELS["mars"];
+
+julia> length(lev), first(lev), last(lev)
+(43, 18.789, 0.099)
+```
+"""
+const DEFAULT_PRESSURE_LEVELS = Dict{String,Vector{Float64}}(
+    "mars" => [
+        18.789,
+        16.582,
+        14.633,
+        12.914,
+        11.396,
+        10.057,
+        8.875,
+        7.833,
+        6.912,
+        6.1,
+        5.383,
+        4.751,
+        4.192,
+        3.7,
+        3.265,
+        2.881,
+        2.543,
+        2.244,
+        1.98,
+        1.748,
+        1.542,
+        1.361,
+        1.201,
+        1.06,
+        0.935,
+        0.826,
+        0.729,
+        0.643,
+        0.567,
+        0.501,
+        0.442,
+        0.39,
+        0.344,
+        0.304,
+        0.268,
+        0.237,
+        0.209,
+        0.184,
+        0.163,
+        0.143,
+        0.127,
+        0.112,
+        0.099,
+    ],
+)
+
+"""
+    default_pressure_levels(planet::AbstractString) -> Vector{Float64}
+
+Default output pressure levels (hPa) of `planet` (case-insensitive) from
+[`DEFAULT_PRESSURE_LEVELS`](@ref); throws an `ArgumentError` if no default is defined
+for the planet.
+
+# Example
+
+```julia
+julia> default_pressure_levels("Mars")[1:3]
+3-element Vector{Float64}:
+ 18.789
+ 16.582
+ 14.633
+```
+"""
+function default_pressure_levels(planet::AbstractString)
+    key = lowercase(planet)
+    haskey(DEFAULT_PRESSURE_LEVELS, key) || throw(
+        ArgumentError(
+            "no default pressure levels for planet \"$planet\" (defined for: " *
+            join(sort!(collect(keys(DEFAULT_PRESSURE_LEVELS))), ", ") *
+            "); give the levels explicitly",
+        ),
+    )
+    return copy(DEFAULT_PRESSURE_LEVELS[key])
+end
+
+"""
+    PressureLevels(levels=nothing; surface_pressure="prsurf", mode=:add)
 
 Interpolation of the 3D variables from the hybrid σ–pressure model layers of
-ModelE/ROCKE-3D to the pressure levels `levels` in the output (see
-[`interpolate_to_pressure`](@ref) for the method). Set as
-`TimeSeriesConfig.pressure_levels`; requires `TimeSeriesConfig.vertical`
-([`VerticalCoordinate`](@ref)) and the reference mid-layer pressures `plm` in the input
-files.
+ModelE/ROCKE-3D to pressure levels in the output (see [`interpolate_to_pressure`](@ref)
+for the method). Set as `TimeSeriesConfig.pressure_levels`; requires
+`TimeSeriesConfig.vertical` ([`VerticalCoordinate`](@ref)) and the reference mid-layer
+pressures `plm` in the input files.
+
+Without `levels` (`nothing`), the default levels of the planet of the configuration are
+used ([`default_pressure_levels`](@ref) of `TimeSeriesConfig.calendar.name`, e.g. the 43
+Mars levels of [`DEFAULT_PRESSURE_LEVELS`](@ref) for [`MARS_CALENDAR`](@ref)); explicit
+`levels` override the default. The levels in use are returned by
+[`output_pressure_levels`](@ref).
 
 The interpolation is done on the monthly means of each column, using the monthly mean
 surface pressure of the column, before any temporal or spatial averaging. All products
@@ -367,8 +470,9 @@ Variables with `to_pressure = false` ([`InputVariable`](@ref),
 
 # Arguments
 
-  - `levels`: pressure levels in hPa (the unit of the surface pressure and of `plm`), any
-    order, positive and unique; written as coordinate `plev` in the given order.
+  - `levels = nothing`: pressure levels in hPa (the unit of the surface pressure and of
+    `plm`), any order, positive and unique; written as coordinate `plev` in the given
+    order. `nothing`: default levels of the planet.
 
 # Keyword arguments
 
@@ -385,29 +489,51 @@ Variables with `to_pressure = false` ([`InputVariable`](@ref),
 # Example
 
 ```julia
-julia> pl = PressureLevels([6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1]);
+julia> pl = PressureLevels();                        # planet default
 
-julia> pl.mode, length(pl.levels)
-(:add, 8)
+julia> pl.levels === nothing, pl.mode
+(true, :add)
+
+julia> PressureLevels([6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1]; mode=:replace).levels[1]
+6.0
 ```
 """
 struct PressureLevels
-    levels::Vector{Float64}
+    levels::Union{Nothing,Vector{Float64}}
     surface_pressure::String
     mode::Symbol
     function PressureLevels(
-        levels::AbstractVector{<:Real};
+        levels::Union{Nothing,AbstractVector{<:Real}}=nothing;
         surface_pressure::AbstractString="prsurf",
         mode::Symbol=:add,
     )
-        isempty(levels) && throw(ArgumentError("no pressure levels given"))
-        all(p -> isfinite(p) && p > 0, levels) ||
-            throw(ArgumentError("pressure levels must be positive and finite"))
-        allunique(levels) || throw(ArgumentError("pressure levels must be unique"))
+        levels === nothing || check_pressure_levels(levels)
         mode in (:add, :replace) ||
             throw(ArgumentError("mode must be :add or :replace, got :$mode"))
-        return new(Float64.(collect(levels)), String(surface_pressure), mode)
+        lev = levels === nothing ? nothing : Float64.(collect(levels))
+        return new(lev, String(surface_pressure), mode)
     end
+end
+
+"""
+    check_pressure_levels(levels) -> nothing
+
+Throws an `ArgumentError` unless `levels` is a non-empty vector of positive, finite,
+unique pressures.
+
+# Example
+
+```julia
+julia> check_pressure_levels([6.0, 3.0]) === nothing
+true
+```
+"""
+function check_pressure_levels(levels::AbstractVector{<:Real})
+    isempty(levels) && throw(ArgumentError("no pressure levels given"))
+    all(p -> isfinite(p) && p > 0, levels) ||
+        throw(ArgumentError("pressure levels must be positive and finite"))
+    allunique(levels) || throw(ArgumentError("pressure levels must be unique"))
+    return nothing
 end
 
 """
@@ -623,7 +749,7 @@ Checks a configuration for consistency and throws an `ArgumentError` describing 
 first problem found. Checks: non-empty runs and groups; unique variable names; sources of
 derived variables defined before use; valid simulation and statistics periods, with the
 statistics window overlapping the simulation period; threshold in (0, 100]; known
-products; `deflatelevel` in 0:9; for `pressure_levels`, a `vertical` coordinate and a
+products; `deflatelevel` in 0:9; for `pressure_levels`, a `vertical` coordinate, default levels for the planet if no levels are given, and a
 configured surface-pressure variable; no reserved names (`lon`, `lat`, `level`, `plev`,
 `time`, `year`, `month`, `plm`, `ple`, area variable, `axyp`, `Dates`, `LS1`, `Psf`,
 `Ptop`) used as variable names. Returns `cfg` so that it can be chained.
@@ -691,9 +817,35 @@ function validate_config(cfg::TimeSeriesConfig)
             throw(ArgumentError("pressure_levels requires the vertical coordinate"))
         pl.surface_pressure in names || throw(
             ArgumentError(
-                "surface-pressure variable $(pl.surface_pressure) is not " * "configured",
+                "surface-pressure variable $(pl.surface_pressure) is not configured"
             ),
         )
+        output_pressure_levels(cfg)       # default levels must exist for the planet
     end
     return cfg
+end
+
+"""
+    output_pressure_levels(cfg::TimeSeriesConfig) -> Vector{Float64}
+
+Pressure levels (hPa) of the output: the explicit `levels` of `cfg.pressure_levels`, or,
+if those are `nothing`, the default levels of the planet `cfg.calendar.name`
+([`default_pressure_levels`](@ref)). Throws an `ArgumentError` if `cfg.pressure_levels`
+is not set or no default exists for the planet.
+
+# Example
+
+```julia
+julia> cfg = TimeSeriesConfig(; cfg_kwargs..., calendar=MARS_CALENDAR,
+                              pressure_levels=PressureLevels());
+
+julia> length(output_pressure_levels(cfg))
+43
+```
+"""
+function output_pressure_levels(cfg::TimeSeriesConfig)
+    pl = cfg.pressure_levels
+    pl === nothing && throw(ArgumentError("pressure_levels not set in the configuration"))
+    pl.levels === nothing || return pl.levels
+    return default_pressure_levels(cfg.calendar.name)
 end

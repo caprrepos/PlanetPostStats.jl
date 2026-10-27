@@ -61,9 +61,11 @@ cfg = TimeSeriesConfig(;
     # year 1 / month 1 gets time = 1
     time_axis=TimeAxis(; reference=YearMonth(0, 12), units="months since 0023-12-56"),
     vertical=VerticalCoordinate(31, 6.86, 0.2),
-    # optional: 3D variables also on pressure levels (hPa) in files *.ijp/zmp/gmp.*.nc;
-    # mode=:replace writes them instead of the model levels into the regular files
-    # pressure_levels=PressureLevels([7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1]),
+    # optional: 3D variables also on pressure levels in files *.ijp/zmp/gmp.*.nc, by
+    # default the 43 Mars levels 18.789-0.099 hPa (DEFAULT_PRESSURE_LEVELS["mars"]);
+    # PressureLevels([7.0, 5.0, 3.0, 1.0]) sets other levels (hPa); mode=:replace writes
+    # them instead of the model levels into the regular files
+    # pressure_levels=PressureLevels(),
     threshold=80.0,
     weight_seasons=true,       # false: equal weights for the months of a season
     output_dir="Tracermass3d",

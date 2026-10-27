@@ -130,7 +130,7 @@ Contents:
 
   - dimensions and coordinates `lon`, `lat`, the model-layer dimension (if `has_model`),
     the pressure-level dimension `plev` (if `has_plev`; hPa, values of
-    `cfg.pressure_levels.levels`), and, for time series and climatologies, the unlimited
+    [`output_pressure_levels`](@ref)`(cfg)`), and, for time series and climatologies, the unlimited
     dimension `time`;
   - for time series: `time` (months from `cfg.time_axis.reference` to the first month of
     each period, attributes from [`time_attributes`](@ref)), the integer variables
@@ -235,7 +235,7 @@ function create_output_file(
             "positive" => "down",
         )
         has_model || (pattr["axis"] = "Z")
-        push!(coords, ("plev", Float32.(cfg.pressure_levels.levels), pattr))
+        push!(coords, ("plev", Float32.(output_pressure_levels(cfg)), pattr))
     end
     has_time = time_months !== nothing || climatology
     if climatology
