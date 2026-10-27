@@ -309,7 +309,6 @@ function load_run(cfg::TimeSeriesConfig, run::AbstractString)
                 for key in ATTRIBUTES_TO_KEEP
                     haskey(fileattr, key) && (att[key] = fileattr[key])
                 end
-                v.scale != 1 && (att["input_scale_factor_applied"] = v.scale)
                 att["source_product"] = group.product
                 push!(gspecs, (v, shape, att))
             end

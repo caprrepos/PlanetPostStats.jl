@@ -6,10 +6,10 @@
 
 A variable to be read from a `scaleacc` output product (see [`InputGroup`](@ref)).
 
-`scaleacc` stores many quantities in scaled units (e.g. tracer mixing ratios in units of
-1e-8 kg kg⁻¹). After reading, values are multiplied by `scale`, so that the internal and
-the output data are in physical units `units`. The output files carry no `scale_factor`
-attribute for this conversion; the attribute `input_scale_factor_applied` documents it.
+`scaleacc` stores many quantities in scaled units, given in the `units` attribute (e.g.
+tracer mixing ratios in units of 1e-8 kg kg⁻¹). After reading, values are multiplied by
+`scale`, so that the internal and the output data are in the units `units`; values and
+`units` attribute of the output files are consistent.
 
 Any `scale_factor`/`add_offset`/`_FillValue`/`missing_value` attributes of the *input*
 file are applied by NCDatasets when reading (CF decoding) before `scale` is applied.
