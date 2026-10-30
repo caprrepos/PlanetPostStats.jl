@@ -1,7 +1,7 @@
 name = "PlanetPostStats"
 uuid = "72538820-a500-4a37-8b65-fe9cc8f4efac"
 authors = ["Jan P. Perlwitz <jan.p.perlwitz@caprllc.com>"]
-version = "0.1.0-DEV"
+version = "0.0.1"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
