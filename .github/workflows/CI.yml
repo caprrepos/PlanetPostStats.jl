@@ -3,8 +3,11 @@ on:
   push:
     branches:
       - main
+      - develop
     tags: ['*']
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 concurrency:
   # Skip intermediate builds: always.
@@ -23,54 +26,78 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.13'
+          - '1.10' # Minimum supported version (julia compat in Project.toml).
+          - '1'
           - 'pre'
         os:
           - ubuntu-latest
         arch:
           - x64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
-        with:
-          # PlanetTools is not in the General registry (installed via [sources]);
-          # Pkg's force_latest_compatible_version, enabled by default in Dependabot and
-          # CompatHelper jobs, cannot look up its versions and fails before testing.
-          force_latest_compatible_version: false
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+  licenses:
+    name: License check - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
+      actions: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          # Pinned so that the inventory matches the committed THIRD_PARTY_LICENSES.md;
+          # raise together with the julia compat and regenerate that file.
+          version: '1.13'
+      - uses: julia-actions/cache@v3
+      # Fails if a dependency has a license that is neither clearly permissive nor
+      # reviewed in scripts/license_check.jl.
+      - name: Check dependency licenses
+        run: julia --color=yes scripts/license_check.jl THIRD_PARTY_LICENSES-${{ runner.os }}.md
+      - name: Upload license inventory
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: third-party-licenses-${{ runner.os }}
+          path: THIRD_PARTY_LICENSES-${{ runner.os }}.md
+          if-no-files-found: warn
   docs:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on:
+      - ubuntu-latest
     permissions:
       actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
       contents: write
       statuses: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.13'
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
+      # Runs docs/make.jl, which also runs all doctests (with Makie loaded for the extension).
       - uses: julia-actions/julia-docdeploy@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-      - name: Run doctests
-        shell: julia --project=docs --color=yes {0}
-        run: |
-          using Documenter: DocMeta, doctest
-          using PlanetPostStats
-          DocMeta.setdocmeta!(PlanetPostStats, :DocTestSetup, :(using PlanetPostStats); recursive=true)
-          doctest(PlanetPostStats)
