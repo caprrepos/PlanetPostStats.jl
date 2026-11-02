@@ -63,7 +63,8 @@ cfg = TimeSeriesConfig(;
     vertical=VerticalCoordinate(31, 6.86, 0.2),
     # optional: 3D variables also on pressure levels in files *.ijp/zmp/gmp.*.nc, by
     # default the 43 Mars levels 18.789-0.099 hPa (DEFAULT_PRESSURE_LEVELS["mars"]);
-    # PressureLevels([7.0, 5.0, 3.0, 1.0]) sets other levels (hPa); mode=:replace writes
+    # PressureLevels([7.0, 5.0, 3.0, 1.0]) sets other levels (hPa), PressureLevels(:model)
+    # uses the reference levels plm of the input (layer edges Psf, ple); mode=:replace writes
     # them instead of the model levels into the regular files
     # pressure_levels=PressureLevels(),
     threshold=80.0,

@@ -452,11 +452,22 @@ for the method). Set as `TimeSeriesConfig.pressure_levels`; requires
 `TimeSeriesConfig.vertical` ([`VerticalCoordinate`](@ref)) and the reference mid-layer
 pressures `plm` in the input files.
 
-Without `levels` (`nothing`), the default levels of the planet of the configuration are
-used ([`default_pressure_levels`](@ref) of `TimeSeriesConfig.calendar.name`, e.g. the 43
-Mars levels of [`DEFAULT_PRESSURE_LEVELS`](@ref) for [`MARS_CALENDAR`](@ref)); explicit
-`levels` override the default. The levels in use are returned by
-[`output_pressure_levels`](@ref).
+Choice of the levels:
+
+  - `levels = nothing` (default): the default levels of the planet of the configuration
+    ([`default_pressure_levels`](@ref) of `TimeSeriesConfig.calendar.name`, e.g. the 43
+    Mars levels of [`DEFAULT_PRESSURE_LEVELS`](@ref) for [`MARS_CALENDAR`](@ref));
+  - `levels = :model`: the reference mid-layer pressures `plm` of the input files, i.e.
+    the pressures of the model layers in a column with surface pressure
+    `VerticalCoordinate.psf`;
+  - a vector of pressures: these levels.
+
+The levels in use are returned by [`output_pressure_levels`](@ref), the pressures at the
+edges of their layers (written as `plev_bnds`) by [`output_pressure_bounds`](@ref): for
+`levels = :model`, the reference edge pressures of the model layers (`Psf` and the
+upper-edge pressures `ple` of the input files) if `ple` is present in the input files;
+otherwise, and for all other levels, the midpoints in `ln p` between the levels
+([`pressure_level_bounds`](@ref)).
 
 The interpolation is done on the monthly means of each column, using the monthly mean
 surface pressure of the column, before any temporal or spatial averaging. All products
@@ -472,7 +483,8 @@ Variables with `to_pressure = false` ([`InputVariable`](@ref),
 
   - `levels = nothing`: pressure levels in hPa (the unit of the surface pressure and of
     `plm`), any order, positive and unique; written as coordinate `plev` in the given
-    order. `nothing`: default levels of the planet.
+    order. `nothing`: default levels of the planet; `:model`: reference mid-layer
+    pressures `plm` of the input files.
 
 # Keyword arguments
 
@@ -496,21 +508,30 @@ julia> pl.levels === nothing, pl.mode
 
 julia> PressureLevels([6.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.5, 0.1]; mode=:replace).levels[1]
 6.0
+
+julia> PressureLevels(:model).levels                # model reference levels plm
+:model
 ```
 """
 struct PressureLevels
-    levels::Union{Nothing,Vector{Float64}}
+    levels::Union{Nothing,Symbol,Vector{Float64}}
     surface_pressure::String
     mode::Symbol
     function PressureLevels(
-        levels::Union{Nothing,AbstractVector{<:Real}}=nothing;
+        levels::Union{Nothing,Symbol,AbstractVector{<:Real}}=nothing;
         surface_pressure::AbstractString="prsurf",
         mode::Symbol=:add,
     )
-        levels === nothing || check_pressure_levels(levels)
+        if levels isa Symbol
+            levels == :model || throw(
+                ArgumentError("levels must be a vector, nothing, or :model, got :$levels"),
+            )
+        elseif levels !== nothing
+            check_pressure_levels(levels)
+        end
         mode in (:add, :replace) ||
             throw(ArgumentError("mode must be :add or :replace, got :$mode"))
-        lev = levels === nothing ? nothing : Float64.(collect(levels))
+        lev = levels isa AbstractVector ? Float64.(collect(levels)) : levels
         return new(lev, String(surface_pressure), mode)
     end
 end
@@ -822,18 +843,27 @@ function validate_config(cfg::TimeSeriesConfig)
                 "surface-pressure variable $(pl.surface_pressure) is not configured"
             ),
         )
-        output_pressure_levels(cfg)       # default levels must exist for the planet
+        # default levels must exist for the planet
+        pl.levels === nothing && default_pressure_levels(cfg.calendar.name)
     end
     return cfg
 end
 
 """
-    output_pressure_levels(cfg::TimeSeriesConfig) -> Vector{Float64}
+    output_pressure_levels(cfg::TimeSeriesConfig, plm=nothing) -> Vector{Float64}
 
-Pressure levels (hPa) of the output: the explicit `levels` of `cfg.pressure_levels`, or,
-if those are `nothing`, the default levels of the planet `cfg.calendar.name`
-([`default_pressure_levels`](@ref)). Throws an `ArgumentError` if `cfg.pressure_levels`
-is not set or no default exists for the planet.
+Pressure levels (hPa) of the output: the explicit `levels` of `cfg.pressure_levels`; if
+those are `nothing`, the default levels of the planet `cfg.calendar.name`
+([`default_pressure_levels`](@ref)); if they are `:model`, the reference mid-layer
+pressures `plm` of the input files (argument `plm`, e.g. `rd.grid.plm`). Throws an
+`ArgumentError` if `cfg.pressure_levels` is not set, no default exists for the planet,
+or `plm` is needed but not given or not a valid set of levels.
+
+# Arguments
+
+  - `cfg::TimeSeriesConfig`: configuration.
+  - `plm = nothing`: reference mid-layer pressures of the input files (hPa); only used
+    for `levels = :model`.
 
 # Example
 
@@ -843,11 +873,25 @@ julia> cfg = TimeSeriesConfig(; cfg_kwargs..., calendar=MARS_CALENDAR,
 
 julia> length(output_pressure_levels(cfg))
 43
+
+julia> cfgm = TimeSeriesConfig(; cfg_kwargs..., pressure_levels=PressureLevels(:model));
+
+julia> output_pressure_levels(cfgm, Float32[5, 1])
+2-element Vector{Float64}:
+ 5.0
+ 1.0
 ```
 """
-function output_pressure_levels(cfg::TimeSeriesConfig)
+function output_pressure_levels(cfg::TimeSeriesConfig, plm=nothing)
     pl = cfg.pressure_levels
     pl === nothing && throw(ArgumentError("pressure_levels not set in the configuration"))
-    pl.levels === nothing || return pl.levels
-    return default_pressure_levels(cfg.calendar.name)
+    pl.levels isa AbstractVector && return pl.levels
+    pl.levels === nothing && return default_pressure_levels(cfg.calendar.name)
+    plm === nothing && throw(
+        ArgumentError(
+            "pressure levels :model need the reference pressures plm of the input"
+        ),
+    )
+    check_pressure_levels(plm)
+    return Float64.(collect(plm))
 end
