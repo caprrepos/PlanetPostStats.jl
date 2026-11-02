@@ -100,7 +100,6 @@ levels `levels` (hPa), written as coordinate `plev`. Without `levels`
 Defaults are defined for Mars: 43 levels from 18.789 hPa to 0.099 hPa, approximately
 equidistant in `ln p` (ratio ≈ 0.88).
 
-
   - The monthly mean fields are interpolated with the monthly mean surface pressure
     (variable `surface_pressure`, which must be configured) before any averaging. The
     mid-layer pressures are `p = Ptop + σ (ps − Ptop)`, `σ = (plm − Ptop)/(Psf − Ptop)`,
@@ -118,6 +117,12 @@ equidistant in `ln p` (ratio ≈ 0.88).
   - Variables with `to_pressure = false` (`InputVariable`, `DerivedVariable`), e.g.
     layer-integrated quantities such as the air mass per area, are not interpolated
     and stay on model levels.
+  - Files with pressure levels contain the pressures at the edges of the layers of the
+    levels as CF cell bounds `plev_bnds(plev, nv)` (hPa; `nv = 1` lower edge, `nv = 2`
+    upper edge; `plev:bounds = "plev_bnds"`; `pressure_level_bounds`). The edge between
+    two neighboring levels is their geometric mean (midpoint in `ln p`); the outermost
+    edges lie half a level spacing in `ln p` beyond the outermost levels. The values on
+    `plev` are the interpolated values at the levels.
 
 ## Statistics
 

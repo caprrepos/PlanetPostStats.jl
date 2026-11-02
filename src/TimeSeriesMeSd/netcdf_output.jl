@@ -130,13 +130,17 @@ Contents:
 
   - dimensions and coordinates `lon`, `lat`, the model-layer dimension (if `has_model`),
     the pressure-level dimension `plev` (if `has_plev`; hPa, values of
-    [`output_pressure_levels`](@ref)`(cfg)`), and, for time series and climatologies, the unlimited
+    [`output_pressure_levels`](@ref)`(cfg)`; with at least two levels it gets the
+    attribute `bounds = "plev_bnds"`), and, for time series and climatologies, the unlimited
     dimension `time`;
   - for time series: `time` (months from `cfg.time_axis.reference` to the first month of
     each period, attributes from [`time_attributes`](@ref)), the integer variables
     `year(time)` and `month(time)`, and the date strings `Dates(time)`
     (`"YYYY-MM-01"`, as always written by `writenetcdf`);
   - for climatologies (`mom`, `som`): `time` = 1 … 12 and `month(time)`;
+  - `plev_bnds(plev, nv)` (if `has_plev` and at least two levels): pressures (hPa) at
+    the lower (`nv = 1`) and upper (`nv = 2`) edge of the layer of each pressure level,
+    [`pressure_level_bounds`](@ref);
   - `plm`, `ple` (reference pressures on the vertical dimension) and `LS1`, `Psf`, `Ptop`
     (if `cfg.vertical` is set) for files with variables on model levels;
   - the grid-cell area `axyp` (the name `writenetcdf` uses): cell areas (`ij`), the zonal mean of the
@@ -235,7 +239,9 @@ function create_output_file(
             "positive" => "down",
         )
         has_model || (pattr["axis"] = "Z")
-        push!(coords, ("plev", Float32.(output_pressure_levels(cfg)), pattr))
+        plevels = output_pressure_levels(cfg)
+        length(plevels) >= 2 && (pattr["bounds"] = "plev_bnds")
+        push!(coords, ("plev", Float32.(plevels), pattr))
     end
     has_time = time_months !== nothing || climatology
     if climatology
@@ -312,6 +318,23 @@ function create_output_file(
                 OrderedDict("long_name" => "Model year of the first month of the period"),
                 OrderedDict("long_name" => "First month of the period"),
             ],
+        )
+    end
+
+    # pressures at the edges of the layers of the pressure levels (CF cell bounds)
+    if has_plev && length(plevels) >= 2
+        writenetcdf(
+            path;
+            mode="a",
+            data=Float32.(pressure_level_bounds(plevels)),
+            names="plev_bnds",
+            dimnames=["nv", "plev"],
+            dataattr=OrderedDict(
+                "units" => "hPa",
+                "long_name" =>
+                    "Pressure at the lower and upper edge of the layer " *
+                    "of the pressure level",
+            ),
         )
     end
 

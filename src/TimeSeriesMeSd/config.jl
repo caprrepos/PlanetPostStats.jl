@@ -773,6 +773,8 @@ function validate_config(cfg::TimeSeriesConfig)
         "lat",
         "level",
         "plev",
+        "plev_bnds",
+        "nv",
         "time",
         "year",
         "month",

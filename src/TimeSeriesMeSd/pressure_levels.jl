@@ -149,6 +149,68 @@ function interpolate_to_pressure(
 end
 
 """
+    pressure_level_bounds(levels) -> Matrix{Float64}
+
+Pressures at the edges of the layers represented by the pressure levels `levels`, as
+CF cell bounds of size `(2, length(levels))`: `bounds[1, k]` is the lower edge (higher
+pressure) and `bounds[2, k]` the upper edge (lower pressure) of the layer of level
+`levels[k]`.
+
+With the levels sorted by decreasing pressure, `p₁ > p₂ > … > p_n`, the edge between two
+neighboring levels is their geometric mean, i.e. the midpoint in `ln p` (the coordinate
+in which [`interpolate_to_pressure`](@ref) interpolates linearly),
+
+    p_{k+1/2} = √(p_k p_{k+1}),
+
+and the outer edges lie half a level spacing in `ln p` beyond the outermost levels,
+`p_{1/2} = p₁ √(p₁/p₂)` and `p_{n+1/2} = p_n √(p_n/p_{n−1})`. Adjacent layers share their
+edges, all edges are positive, and every level lies inside its layer. The levels may be
+given in any order; the bounds refer to `levels[k]` in the given order. At least two
+levels are needed.
+
+# Arguments
+
+  - `levels::AbstractVector{<:Real}`: positive, unique pressure levels.
+
+# Returns
+
+`Matrix{Float64}` of size `(2, length(levels))`.
+
+# Example
+
+```julia
+julia> b = pressure_level_bounds([4.0, 1.0, 0.25]);
+
+julia> b[:, 2]                     # layer of 1 hPa: edges √(4·1) and √(1·0.25)
+2-element Vector{Float64}:
+ 2.0
+ 0.5
+
+julia> b[1, 1], b[2, 3]            # outer edges: 4·√4 and 0.25·√0.25
+(8.0, 0.125)
+```
+"""
+function pressure_level_bounds(levels::AbstractVector{<:Real})
+    check_pressure_levels(levels)
+    n = length(levels)
+    n >= 2 || throw(ArgumentError("pressure-level bounds need at least two levels"))
+    order = sortperm(levels; rev=true)
+    p = Float64.(levels[order])                # decreasing pressure
+    edges = Vector{Float64}(undef, n + 1)      # edges[k] below, edges[k + 1] above p[k]
+    for k in 1:(n - 1)
+        edges[k + 1] = sqrt(p[k] * p[k + 1])
+    end
+    edges[1] = p[1] * sqrt(p[1] / p[2])
+    edges[n + 1] = p[n] * sqrt(p[n] / p[n - 1])
+    bounds = Matrix{Float64}(undef, 2, n)
+    for (k, i) in enumerate(order)
+        bounds[1, i] = edges[k]
+        bounds[2, i] = edges[k + 1]
+    end
+    return bounds
+end
+
+"""
     pressure_flags(cfg::TimeSeriesConfig) -> Dict{String,Bool}
 
 `to_pressure` flag of every configured variable (input and derived), by name.
