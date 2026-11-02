@@ -15,7 +15,7 @@ DataFrames = "1.6"
 Dates = "1"
 NCDatasets = "0.14"
 OrderedCollections = "1, 2"
-PlanetTools = "0.2"
+PlanetTools = "0.2.2"
 julia = "1.10"
 
 [extras]
