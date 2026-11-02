@@ -1,0 +1,56 @@
+## Author: Jan P. Perlwitz, Climate, Aerosol, and Pollution Research, LLC
+##         (jan.p.perlwitz@caprllc.com)
+## AI cowork: Claude Opus 5.5 (model ID claude-opus-5-5, Anthropic),
+##   used from 2026-10-24 to 2026-10-31
+
+# Check that all Julia files follow the Blue style guide.
+# The style is set in `.JuliaFormatter.toml` (`style = "blue"`) at the repository root,
+# so the same configuration is used locally and in CI. To fix a failing check locally:
+#   julia -e 'using JuliaFormatter; format(".")'
+name: Format
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: JuliaFormatter (BlueStyle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: "1"
+
+      - uses: julia-actions/cache@v3
+
+      - name: Install JuliaFormatter
+        # Pin the major version: formatting output can change between major releases.
+        run: julia --color=yes -e 'using Pkg; Pkg.add(name="JuliaFormatter", version="2")'
+
+      - name: Format all Julia files
+        run: julia --color=yes -e 'using JuliaFormatter; format("."; verbose=true)'
+
+      - name: Fail if any file was not formatted
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Some files do not follow BlueStyle. Run JuliaFormatter locally:"
+            echo "::error::julia -e 'using JuliaFormatter; format(\".\")'"
+            git diff --color=always
+            exit 1
+          fi
+          echo "All Julia files follow BlueStyle."

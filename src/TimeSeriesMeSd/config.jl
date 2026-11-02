@@ -250,7 +250,7 @@ end
     dust_mass_classes(available; physvar="", addlongname="", units="") -> Vector{DerivedVariable}
 
 Cumulative dust mass size classes of ModelE/ROCKE-3D, with the bin and class names of
-`PlanetTools.DerivePhysicsVariablesModelE.accumulate_dust_masses_modele`:
+`PlanetTools.DerivePhysicsVariables.accumulate_dust_masses_modele`:
 
 | class      | sum of the bins                 |
 |:-----------|:--------------------------------|
@@ -297,8 +297,8 @@ function dust_mass_classes(
     addlongname::AbstractString="",
     units::AbstractString="",
 )
-    bins = DerivePhysicsVariablesModelE.MASS_BINS
-    classes = DerivePhysicsVariablesModelE.MASS_CLASSES
+    bins = DerivePhysicsVariables.MASS_BINS
+    classes = DerivePhysicsVariables.MASS_CLASSES
     derived = DerivedVariable[]
     previous = nothing
     for (bin, class) in zip(bins, classes)

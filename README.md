@@ -16,9 +16,7 @@ Pkg.add(url="https://github.com/caprrepos/PlanetPostStats.jl")
 Pkg.develop(path="/path/to/PlanetPostStats.jl")
 ```
 
-Requires Julia ≥ 1.13. Dependencies: PlanetTools ≥ 0.2
-([caprrepos/PlanetTools.jl](https://github.com/caprrepos/PlanetTools.jl), not registered;
-installed from GitHub through the `[sources]` entry of `Project.toml`), NCDatasets,
+Requires Julia ≥ 1.10. Dependencies: PlanetTools ≥ 0.2 for NCDatasets,
 DataFrames, OrderedCollections, Dates.
 
 ## Quick start

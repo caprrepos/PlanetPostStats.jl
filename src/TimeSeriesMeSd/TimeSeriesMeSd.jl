@@ -94,7 +94,7 @@ using PlanetTools.PlanetStatistics:
     calc_planet_means!, calc_annual_mean_ts!, calc_seasonal_mean_ts!, calc_multiyear_stats!
 using PlanetTools.Constructors: fnames_modele
 using PlanetTools.ReadWritePlanet: writenetcdf
-using PlanetTools.DerivePhysicsVariablesModelE: DerivePhysicsVariablesModelE
+using PlanetTools.DerivePhysicsVariables: DerivePhysicsVariables
 
 include("calendar.jl")
 include("config.jl")
