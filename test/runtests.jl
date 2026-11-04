@@ -286,6 +286,39 @@ end
         ) isa TimeSeriesConfig
     end
 
+    @testset "pressure-level bounds" begin
+        b = pressure_level_bounds([4.0, 1.0, 0.25])
+        @test b ≈ [8.0 2.0 0.5; 2.0 0.5 0.125]
+        # any order: bounds follow the given order of the levels
+        @test pressure_level_bounds([1.0, 0.25, 4.0]) ≈ b[:, [2, 3, 1]]
+        lev = DEFAULT_PRESSURE_LEVELS["mars"]
+        bm = pressure_level_bounds(lev)
+        @test all(bm[1, :] .> lev .> bm[2, :] .> 0)
+        @test bm[2, 1:(end - 1)] ≈ bm[1, 2:end]
+        @test_throws ArgumentError pressure_level_bounds([5.0])
+        # reference edges of the model layers from Psf and ple
+        @test model_level_bounds([5.0, 1.0], [3.0, 0.2], 6.86) ≈ [6.86 3.0; 3.0 0.2]
+        @test_throws ArgumentError model_level_bounds([5.0, 1.0], [3.0], 6.86)
+        @test_throws ArgumentError model_level_bounds([5.0, 1.0], [5.5, 0.2], 6.86)
+        root = mktempdir()
+        cfgm = test_config(root, ["A"]; pressure_levels=PressureLevels(:model))
+        @test validate_config(cfgm) isa TimeSeriesConfig
+        @test output_pressure_levels(cfgm, Float32[5, 1]) == [5.0, 1.0]
+        @test_throws ArgumentError output_pressure_levels(cfgm)
+        @test output_pressure_bounds(cfgm, Float32[5, 1], Float32[3, 0.2]) ≈
+            [6.86 3.0; 3.0 0.2] rtol = 1e-6
+        # without ple: midpoints in ln p
+        @test output_pressure_bounds(cfgm, Float32[5, 1]) ≈ pressure_level_bounds([5, 1])
+        # other levels: ple is not used
+        cfgv = test_config(root, ["A"]; pressure_levels=PressureLevels([4.0, 1.0]))
+        @test output_pressure_bounds(cfgv, Float32[5, 1], Float32[3, 0.2]) ≈
+            pressure_level_bounds([4.0, 1.0])
+        @test output_pressure_bounds(
+            test_config(root, ["A"]; pressure_levels=PressureLevels([4.0]))
+        ) === nothing
+        @test_throws ArgumentError PressureLevels(:other)
+    end
+
     @testset "pressure-level interpolation" begin
         vc = VerticalCoordinate(3, 10.0, 1.0)      # layers 1, 2 σ; layer 3 pressure
         @test layer_pressure(10.0, 9.0, 1, vc) ≈ 9.0
@@ -460,6 +493,13 @@ end
             @test ds["plev"][:] ≈ plev
             @test ds["plev"].attrib["units"] == "hPa"
             @test ds["plev"].attrib["positive"] == "down"
+            @test ds["plev"].attrib["bounds"] == "plev_bnds"
+            @test dimnames(ds["plev_bnds"]) == ("nv", "plev")
+            pb = ds["plev_bnds"][:, :]
+            @test pb ≈ pressure_level_bounds(plev)
+            @test pb[2, 1:(end - 1)] ≈ pb[1, 2:end]           # shared edges
+            @test all(pb[1, :] .> plev .> pb[2, :])
+            @test pb[1, 2] ≈ sqrt(8.0 * 6.0) rtol = 1e-6
             @test haskey(ds.attrib, "Vertical_interpolation")
             @test !haskey(ds, "airmass")         # to_pressure = false
             @test !haskey(ds, "prsurf")          # 2D
@@ -510,9 +550,37 @@ end
         ) do ds
             @test dimnames(ds["z"]) == ("lon", "lat", "plev", "time")
             @test ds["plev"][:] ≈ DEFAULT_PRESSURE_LEVELS["mars"]
+            @test size(ds["plev_bnds"]) == (2, 43)
             @test dimnames(ds["airmass"]) == ("lon", "lat", "level", "time")
             @test dimnames(ds["prsurf"]) == ("lon", "lat", "time")
             @test haskey(ds, "plm")
+        end
+
+        # model reference levels plm, edges from Psf and ple of the input files
+        cfgm = test_config(
+            root,
+            ["A"];
+            pressure_levels=PressureLevels(:model),
+            products=[:mts],
+            output_dir="OutModel",
+        )
+        resm = only(run_timeseries_statistics(cfgm))
+        @test length(resm.files) == 6
+        NCDataset(
+            joinpath(
+                output_directory(cfgm, "A"), "MonthlyTs", "JAN0001-DEC0004.testA.ijp.mts.nc"
+            ),
+        ) do ds
+            @test ds["plev"][:] ≈ [5.0, 1.0]
+            @test ds["plev_bnds"][:, :] ≈ [6.86 3.0; 3.0 0.2] rtol = 1e-6
+            ym = YearMonth(2, 3)
+            t = findfirst(==(ym), allmonths)
+            @test ds["z"][1, 1, 1, t] ≈ z_expected(1, 1, ym, 5.0) rtol = 1e-5
+            # ps > Psf: the σ layers are at higher pressures than plm, so 1 hPa lies
+            # above the mid-point of the uppermost layer and is missing
+            @test isnan(z_expected(1, 1, ym, 1.0))
+            @test ismissing(ds["z"][1, 1, 2, t])
+            @test !haskey(ds, "airmass")
         end
     end
 end

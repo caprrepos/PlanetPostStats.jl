@@ -149,6 +149,161 @@ function interpolate_to_pressure(
 end
 
 """
+    pressure_level_bounds(levels) -> Matrix{Float64}
+
+Pressures at the edges of the layers represented by the pressure levels `levels`, as
+CF cell bounds of size `(2, length(levels))`: `bounds[1, k]` is the lower edge (higher
+pressure) and `bounds[2, k]` the upper edge (lower pressure) of the layer of level
+`levels[k]`.
+
+With the levels sorted by decreasing pressure, `p₁ > p₂ > … > p_n`, the edge between two
+neighboring levels is their geometric mean, i.e. the midpoint in `ln p` (the coordinate
+in which [`interpolate_to_pressure`](@ref) interpolates linearly),
+
+    p_{k+1/2} = √(p_k p_{k+1}),
+
+and the outer edges lie half a level spacing in `ln p` beyond the outermost levels,
+`p_{1/2} = p₁ √(p₁/p₂)` and `p_{n+1/2} = p_n √(p_n/p_{n−1})`. Adjacent layers share their
+edges, all edges are positive, and every level lies inside its layer. The levels may be
+given in any order; the bounds refer to `levels[k]` in the given order. At least two
+levels are needed.
+
+# Arguments
+
+  - `levels::AbstractVector{<:Real}`: positive, unique pressure levels.
+
+# Returns
+
+`Matrix{Float64}` of size `(2, length(levels))`.
+
+# Example
+
+```julia
+julia> b = pressure_level_bounds([4.0, 1.0, 0.25]);
+
+julia> b[:, 2]                     # layer of 1 hPa: edges √(4·1) and √(1·0.25)
+2-element Vector{Float64}:
+ 2.0
+ 0.5
+
+julia> b[1, 1], b[2, 3]            # outer edges: 4·√4 and 0.25·√0.25
+(8.0, 0.125)
+```
+"""
+function pressure_level_bounds(levels::AbstractVector{<:Real})
+    check_pressure_levels(levels)
+    n = length(levels)
+    n >= 2 || throw(ArgumentError("pressure-level bounds need at least two levels"))
+    order = sortperm(levels; rev=true)
+    p = Float64.(levels[order])                # decreasing pressure
+    edges = Vector{Float64}(undef, n + 1)      # edges[k] below, edges[k + 1] above p[k]
+    for k in 1:(n - 1)
+        edges[k + 1] = sqrt(p[k] * p[k + 1])
+    end
+    edges[1] = p[1] * sqrt(p[1] / p[2])
+    edges[n + 1] = p[n] * sqrt(p[n] / p[n - 1])
+    bounds = Matrix{Float64}(undef, 2, n)
+    for (k, i) in enumerate(order)
+        bounds[1, i] = edges[k]
+        bounds[2, i] = edges[k + 1]
+    end
+    return bounds
+end
+
+"""
+    model_level_bounds(plm, ple, psf) -> Matrix{Float64}
+
+Reference pressures at the edges of the model layers as CF cell bounds of size
+`(2, L)`: `bounds[1, l]` is the lower edge of layer `l` (`psf` for the lowest layer, the
+upper edge `ple[l - 1]` of the layer below otherwise), `bounds[2, l] = ple[l]` its upper
+edge. These are the edge pressures of the hybrid σ–pressure layers in a column with
+surface pressure `psf` (`VerticalCoordinate.psf`); `ple` is the variable of the same name
+in the `scaleacc` files, which also defines σ at the layer edges.
+
+Throws an `ArgumentError` unless `plm` and `ple` have the same length and every
+reference mid-layer pressure lies inside its layer, `lower edge > plm[l] > ple[l] ≥ 0`.
+
+# Arguments
+
+  - `plm::AbstractVector{<:Real}`: reference mid-layer pressures (layer 1 at the bottom).
+  - `ple::AbstractVector{<:Real}`: reference upper-edge pressures of the layers.
+  - `psf::Real`: reference surface pressure.
+
+# Example
+
+```julia
+julia> model_level_bounds([5.0, 1.0], [3.0, 0.2], 6.86)
+2×2 Matrix{Float64}:
+ 6.86  3.0
+ 3.0   0.2
+```
+"""
+function model_level_bounds(
+    plm::AbstractVector{<:Real}, ple::AbstractVector{<:Real}, psf::Real
+)
+    n = length(plm)
+    length(ple) == n || throw(ArgumentError("plm has $n levels, ple has $(length(ple))"))
+    bounds = Matrix{Float64}(undef, 2, n)
+    for l in 1:n
+        lower = l == 1 ? Float64(psf) : Float64(ple[l - 1])
+        upper = Float64(ple[l])
+        lower > plm[l] > upper >= 0 || throw(
+            ArgumentError(
+                "layer $l: plm = $(plm[l]) is not between the edges $lower and $upper"
+            ),
+        )
+        bounds[1, l] = lower
+        bounds[2, l] = upper
+    end
+    return bounds
+end
+
+"""
+    output_pressure_bounds(cfg::TimeSeriesConfig, plm=nothing, ple=nothing)
+        -> Union{Nothing,Matrix{Float64}}
+
+Pressures (hPa) at the edges of the layers of the output pressure levels
+[`output_pressure_levels`](@ref)`(cfg, plm)`, as CF cell bounds of size
+`(2, number of levels)`, written as `plev_bnds`:
+
+  - for `levels = :model` and the upper-edge pressures `ple` of the input files given
+    (e.g. `rd.grid.ple`): the reference edge pressures of the model layers,
+    [`model_level_bounds`](@ref)`(plm, ple, cfg.vertical.psf)`;
+  - otherwise: the midpoints in `ln p` between the levels,
+    [`pressure_level_bounds`](@ref).
+
+Returns `nothing` for a single level without `ple` (no edges can be derived).
+
+# Arguments
+
+  - `cfg::TimeSeriesConfig`: configuration with `pressure_levels`.
+  - `plm = nothing`, `ple = nothing`: reference mid-layer and upper-edge pressures of the
+    input files (hPa).
+
+# Example
+
+```julia
+julia> cfgm = TimeSeriesConfig(; cfg_kwargs..., vertical=VerticalCoordinate(31, 6.86, 0.2),
+                               pressure_levels=PressureLevels(:model));
+
+julia> output_pressure_bounds(cfgm, Float32[5, 1], Float32[3, 0.2])[:, 1]
+2-element Vector{Float64}:
+ 6.86
+ 3.0
+```
+"""
+function output_pressure_bounds(cfg::TimeSeriesConfig, plm=nothing, ple=nothing)
+    levels = output_pressure_levels(cfg, plm)
+    if cfg.pressure_levels.levels === :model && ple !== nothing
+        cfg.vertical === nothing &&
+            throw(ArgumentError("pressure_levels requires the vertical coordinate"))
+        return model_level_bounds(levels, ple, cfg.vertical.psf)
+    end
+    length(levels) >= 2 || return nothing
+    return pressure_level_bounds(levels)
+end
+
+"""
     pressure_flags(cfg::TimeSeriesConfig) -> Dict{String,Bool}
 
 `to_pressure` flag of every configured variable (input and derived), by name.
