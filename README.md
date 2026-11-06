@@ -98,8 +98,9 @@ levels `levels` (hPa), written as coordinate `plev`. Without `levels`
 (`PressureLevels()`), the default levels of the planet given by `calendar.name` are used
 (`DEFAULT_PRESSURE_LEVELS`, `default_pressure_levels`); explicit `levels` override them.
 Defaults are defined for Mars: 43 levels from 18.789 hPa to 0.099 hPa, approximately
-equidistant in `ln p` (ratio ≈ 0.88).
-
+equidistant in `ln p` (ratio ≈ 0.88). `PressureLevels(:model)` uses the reference
+mid-layer pressures `plm` of the input files as levels, i.e. the pressures of the model
+layers in a column with surface pressure `Psf`.
 
   - The monthly mean fields are interpolated with the monthly mean surface pressure
     (variable `surface_pressure`, which must be configured) before any averaging. The
@@ -118,6 +119,17 @@ equidistant in `ln p` (ratio ≈ 0.88).
   - Variables with `to_pressure = false` (`InputVariable`, `DerivedVariable`), e.g.
     layer-integrated quantities such as the air mass per area, are not interpolated
     and stay on model levels.
+  - Files with pressure levels contain the pressures at the edges of the layers of the
+    levels as CF cell bounds `plev_bnds(plev, nv)` (hPa; `nv = 1` lower edge, `nv = 2`
+    upper edge; `plev:bounds = "plev_bnds"`; `output_pressure_bounds`):
+      - for `PressureLevels(:model)`, if the input files contain the upper-edge
+        reference pressures `ple`: the reference edge pressures of the model layers,
+        `Psf` and `ple` (`model_level_bounds`);
+      - otherwise: the edge between two neighboring levels is their geometric mean
+        (midpoint in `ln p`), and the outermost edges lie half a level spacing in `ln p`
+        beyond the outermost levels (`pressure_level_bounds`).
+
+    The values on `plev` are the interpolated values at the levels.
 
 ## Statistics
 

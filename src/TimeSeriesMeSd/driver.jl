@@ -191,7 +191,7 @@ count(e -> e.vertical == :pressure, entries)
 """
 function output_entries(cfg::TimeSeriesConfig, rd::RunData)
     pl = cfg.pressure_levels
-    plev = pl === nothing ? nothing : output_pressure_levels(cfg)
+    plev = pl === nothing ? nothing : output_pressure_levels(cfg, rd.grid.plm)
     flags = pressure_flags(cfg)
     main = OutputEntry[]
     extra = OutputEntry[]
