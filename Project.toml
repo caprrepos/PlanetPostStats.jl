@@ -1,6 +1,6 @@
 name = "PlanetPostStats"
 uuid = "72538820-a500-4a37-8b65-fe9cc8f4efac"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Jan P. Perlwitz <jan.p.perlwitz@caprllc.com>"]
 
 [deps]
