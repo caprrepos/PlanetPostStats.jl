@@ -14,7 +14,7 @@ using DataFrames
 ## Simulations ---------------------------------------------------------------------------
 const SIMPATH = "/path/to/simulations"      # directory with one subdirectory per run
 const POSTDIR = "Post"                      # subdirectory of a run with the scaleacc files
-const RUNS = ["MarsDustRun1", "MarsDustRun2"]
+const RUNS = ["Run1", "Run2"]
 const POSTNAMES = ["aij", "aijl", "taijl"]  # scaleacc products read
 
 ## Time periods --------------------------------------------------------------------------

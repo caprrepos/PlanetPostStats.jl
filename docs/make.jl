@@ -14,7 +14,11 @@ makedocs(;
         edit_link="main",
         assets=String[],
     ),
-    pages=["Home" => "index.md"],
+    pages=[
+        "Home" => "index.md",
+        "TimeSeriesMeSd" => "timeseriesmesd.md",
+        "DustOptics" => "dustoptics.md",
+    ],
 )
 
 deploydocs(; repo="github.com/caprrepos/PlanetPostStats.jl", devbranch="main")

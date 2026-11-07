@@ -6,6 +6,7 @@ simulations, for one or many simulations at once.
 | Submodule        | Purpose |
 |:-----------------|:--------|
 | `TimeSeriesMeSd` | monthly, seasonal, and annual time series and multi-year means and standard deviations of gridded, zonal-mean, and global-mean fields |
+| `DustOptics`     | effective radii and scattering, absorption, and extinction optical depths of the dust aerosol, computed from the `TimeSeriesMeSd` output of the dust tracers, with the same time series and statistics |
 
 ## Installation
 
@@ -16,8 +17,8 @@ Pkg.add(url="https://github.com/caprrepos/PlanetPostStats.jl")
 Pkg.develop(path="/path/to/PlanetPostStats.jl")
 ```
 
-Requires Julia ≥ 1.10. Dependencies: PlanetTools ≥ 0.2 for NCDatasets,
-DataFrames, OrderedCollections, Dates.
+Requires Julia ≥ 1.10. Dependencies: PlanetTools ≥ 0.2.2, NCDatasets, DataFrames,
+OrderedCollections, CSV, Dates.
 
 ## Quick start
 
@@ -130,6 +131,78 @@ layers in a column with surface pressure `Psf`.
         beyond the outermost levels (`pressure_level_bounds`).
 
     The values on `plev` are the interpolated values at the levels.
+
+## Dust optics
+
+`PlanetPostStats.DustOptics` post-processes the dust aerosol optically. Its input are the
+monthly time series of the dust tracer mass mixing ratios (kg kg⁻¹) and of the air mass
+of the layers (kg m⁻²) written by `TimeSeriesMeSd`
+(`<prefix>.<input_name><run>.ijl.mts.nc` in `<simpath>/<run>/<input_dir>/MonthlyTs/`).
+
+```julia
+using PlanetPostStats.TimeSeriesMeSd
+using PlanetPostStats.DustOptics
+
+bins = [DustBin("Clay1"; source="Clay", radius=0.132e-6, density=2.5e3),
+        DustBin("Clay2"; source="Clay", radius=0.23e-6, density=2.5e3),
+        DustBin("Clay3"; source="Clay", radius=0.416e-6, density=2.5e3),
+        DustBin("Clay4"; source="Clay", radius=0.766e-6, density=2.5e3),
+        DustBin("Silt1"; radius=1.386e-6, density=2.65e3)]
+sw = SpectralSet("sw", read_spectral_table("aer_sw_dust.nc", "sw_bands.csv"),
+                 [0.55e-6, 0.89e-6])
+stats = TimeSeriesConfig(; simpath="/path/to/simulations", runs=["MarsDustRun1"],
+    sim_period=(YearMonth(1, 1), YearMonth(20, 12)),
+    stat_period=(YearMonth(3, 1), YearMonth(20, 12)), calendar=MARS_CALENDAR,
+    seasons=MARS_SEASONS, vertical=VerticalCoordinate(31, 6.86, 0.2),
+    output_dir="Traceroptics3d", output_name="traceroptics3d")
+cfg = DustOpticsConfig(; stats=stats, bins=bins, spectral=[sw],
+    fractions=bin_fractions(bins, "Clay" => [0.009, 0.081, 0.234, 0.676]),
+    input_dir="Tracermass3d", input_name="tracermass3d")
+results = run_dust_optics(cfg)
+```
+
+For every run and month:
+
+  - **Bin masses.** The mass per unit area of size bin `b` in a layer is
+    `m_b = f_b q_s m_air`: the mass mixing ratio `q_s` of its source tracer `s`
+    (`DustBin(...; source)`), the fraction `f_b` of the tracer in the bin
+    (`DustOpticsConfig.fractions`: a vector, a `Dict` by run, or a function of the run;
+    `bin_fractions`), and the air mass `m_air` of the layer. Several bins may share a
+    source, e.g. the clay sub-bins `Clay1`, …, `Clay4` of the radiative calculations.
+  - **Effective radius.** `r_eff = Σ V_b / Σ (V_b / r_b)` with `V_b = m_b / ρ_b`
+    (Hansen and Travis, 1974), as in `PlanetTools.calc_size_integrated_effective_radius`,
+    for the layers (`effRad3d_<class>`) and for the column dust load
+    (`effRadColMass_<class>`), and the column average of the layer values weighted with
+    the dust mass of the layers (`effRadColAve_<class>`). `<class>` is the largest size
+    class, e.g. `PM32Dust`. Units m.
+  - **Optical coefficients.** The mass scattering and absorption coefficients `k` (and
+    the asymmetry parameter) of the optical-property file of the radiation code are
+    interpolated to the diagnostic wavelengths and to the effective radii of the bins,
+    linearly in log–log space, with
+    `PlanetTools.interpolate_extinction_coeff_log` (`SpectralTable`,
+    `read_spectral_table`, `SpectralSet`, `interpolate_coefficients`). They can be
+    written to a NetCDF file (`SpectralSet(...; coefficients_file)`).
+  - **Optical depths.** `τ = Σ_b k_b m_b` for scattering (`sct`), absorption (`abs`),
+    and extinction (`ext`, `k_scat + k_abs`), for every bin and every cumulative size
+    class (`SumClay1Dust`, `SumClay2Dust`, `SumClay3Dust`, `PM2Dust`, …, `PM32Dust`, as
+    in `PlanetTools.accumulate_dust_optics_modele`), in the layers (`<q>3d_<λ>_<bin>`,
+    e.g. `ext3d_550nm_Clay1`) and of the column (`<q>2d_<λ>_<bin>`, e.g.
+    `ext2d_550nm_PM32Dust`). Units 1.
+
+All variables are written with the time series and statistics of `TimeSeriesMeSd`
+(settings of `DustOpticsConfig.stats`). Every variable is computed only when it is
+written, from the source tracer masses of one run, so that memory stays bounded by these
+masses plus a few fields. The selection of the output is controlled by `quantities`,
+`layers`, `columns`, `bin_variables`, and `class_variables`. With
+`stats.pressure_levels`, only the 3D effective radius is interpolated to pressure levels;
+the layer optical depths are layer-integrated quantities and stay on the model levels.
+
+A complete application (ROCKE-3D Mars dust, shortwave and longwave wavelengths, clay
+sub-bin fractions selected by run) is in
+`examples/mkPostDiagTimeSeriesMeSd_Rocke3d_traceroptics3d.jl`.
+
+Reference: Hansen, J. E., and L. D. Travis (1974), Light scattering in planetary
+atmospheres, *Space Sci. Rev.*, 16(4), 527–610, doi:10.1007/BF00168069.
 
 ## Statistics
 

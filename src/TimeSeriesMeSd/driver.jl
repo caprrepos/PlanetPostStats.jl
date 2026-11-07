@@ -138,6 +138,38 @@ function run_timeseries_statistics(cfg::TimeSeriesConfig; runs=cfg.runs)
 end
 
 """
+    process_runs(load, cfg::TimeSeriesConfig, runs) -> Vector{RunResult}
+
+Processes the runs one after the other: `rd = load(r)` must return the
+[`RunData`](@ref) of run `r`, which is then processed with
+[`process_run`](@ref)`(cfg, rd)` and released before the next run is loaded. This is the
+entry point for applications that provide their own input (e.g.
+`PlanetPostStats.DustOptics`); [`run_timeseries_statistics`](@ref) uses it with
+[`load_run`](@ref). `cfg` is not validated here.
+
+# Arguments
+
+  - `load`: function `run::String -> RunData`.
+  - `cfg::TimeSeriesConfig`: configuration of the statistics and the output.
+  - `runs`: run identifiers.
+
+# Example
+
+```julia
+results = process_runs(r -> load_run(cfg, r), cfg, cfg.runs)
+```
+"""
+function process_runs(load, cfg::TimeSeriesConfig, runs)
+    results = RunResult[]
+    for r in runs
+        run = String(r)
+        @info "Reading run $run"
+        push!(results, process_run(cfg, load(run)))
+    end
+    return results
+end
+
+"""
     OutputEntry
 
 One variable as written to one set of output files.
@@ -192,34 +224,33 @@ count(e -> e.vertical == :pressure, entries)
 function output_entries(cfg::TimeSeriesConfig, rd::RunData)
     pl = cfg.pressure_levels
     plev = pl === nothing ? nothing : output_pressure_levels(cfg, rd.grid.plm)
-    flags = pressure_flags(cfg)
     main = OutputEntry[]
     extra = OutputEntry[]
     ps = nothing
     if pl !== nothing
-        haskey(rd.variables, pl.surface_pressure) || throw(
+        psvar = lookup_variable(rd, pl.surface_pressure)
+        psvar === nothing && throw(
             ArgumentError("surface-pressure variable $(pl.surface_pressure) not loaded")
         )
-        psvar = rd.variables[pl.surface_pressure]
         psvar.is3d && throw(ArgumentError("$(pl.surface_pressure) is not a 2D variable"))
-        ps = psvar.data
+        ps = field(psvar)
         rd.grid.plm === nothing &&
             throw(ArgumentError("no reference pressures plm in the input files"))
     end
     for (name, v) in rd.variables
-        data = v.data
-        if pl !== nothing && v.is3d && get(flags, name, true)
+        data = () -> field(v)
+        if pl !== nothing && v.is3d && v.to_pressure
             interp =
-                () -> interpolate_to_pressure(data, ps, rd.grid.plm, cfg.vertical, plev)
+                () -> interpolate_to_pressure(field(v), ps, rd.grid.plm, cfg.vertical, plev)
             if pl.mode == :add
-                push!(main, OutputEntry(:main, name, v.attrib, :model, () -> data))
+                push!(main, OutputEntry(:main, name, v.attrib, :model, data))
                 push!(extra, OutputEntry(:pressure, name, v.attrib, :pressure, interp))
             else
                 push!(main, OutputEntry(:main, name, v.attrib, :pressure, interp))
             end
         else
             vertical = v.is3d ? :model : :none
-            push!(main, OutputEntry(:main, name, v.attrib, vertical, () -> data))
+            push!(main, OutputEntry(:main, name, v.attrib, vertical, data))
         end
     end
     return vcat(main, extra)
@@ -227,23 +258,36 @@ end
 
 """
     process_run(cfg::TimeSeriesConfig, run::String) -> RunResult
+    process_run(cfg::TimeSeriesConfig, rd::RunData) -> RunResult
 
-Processes a single run (see [`run_timeseries_statistics`](@ref) for the steps).
+Processes a single run (see [`run_timeseries_statistics`](@ref) for the steps): the run
+`run` is read with [`load_run`](@ref), or the already loaded data `rd` are used. The
+variables of `rd.variables` are written in their order; a [`LazyVariable`](@ref) is
+computed when it is processed and released afterwards.
 
 # Example
 
 ```julia
 res = process_run(cfg, "MarsDustRun1")
 res.files
+
+res = process_run(cfg, load_run(cfg, "MarsDustRun1"))   # the same
 ```
 """
 function process_run(cfg::TimeSeriesConfig, run::String)
     @info "Reading run $run"
-    rd = load_run(cfg, run)
+    return process_run(cfg, load_run(cfg, run))
+end
+
+function process_run(cfg::TimeSeriesConfig, rd::RunData)
+    run = rd.run
     months = rd.months
-    nbytes = sum(sizeof(v.data) for v in values(rd.variables))
+    stored = (v.data for v in values(rd.variables) if v isa VariableData)
+    nbytes = sum(sizeof, stored; init=0)
+    nlazy = count(v -> v isa LazyVariable, values(rd.variables))
     @info "Run $run: $(length(months)) months ($(first(months)) – $(last(months))), " *
-        "$(length(rd.variables)) variables, $(round(nbytes / 2^20; digits=1)) MiB"
+        "$(length(rd.variables)) variables ($nlazy computed on demand), " *
+        "$(round(nbytes / 2^20; digits=1)) MiB stored"
 
     thr = cfg.threshold
     w = month_weights(cfg.calendar, months)

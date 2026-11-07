@@ -584,3 +584,4 @@ end
         end
     end
 end
+include("dustoptics_tests.jl")

@@ -4,6 +4,7 @@ version = "0.0.1"
 authors = ["Jan P. Perlwitz <jan.p.perlwitz@caprllc.com>"]
 
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
@@ -11,6 +12,7 @@ OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 PlanetTools = "6e134580-676a-4416-8bb0-db5b9bd9bc08"
 
 [compat]
+CSV = "0.10"
 DataFrames = "1.6"
 Dates = "1"
 NCDatasets = "0.14"

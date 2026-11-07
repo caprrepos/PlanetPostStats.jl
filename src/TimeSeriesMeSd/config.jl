@@ -620,7 +620,6 @@ post-processing performed by [`run_timeseries_statistics`](@ref).
   - `simpath::AbstractString`: directory containing one subdirectory per run.
   - `runs::AbstractVector{<:AbstractString}`: run identifiers; input files of run `r` are
     expected in `joinpath(simpath, r, postdir)`.
-  - `groups::AbstractVector{InputGroup}`: `scaleacc` products and variables to read.
   - `sim_period::Tuple{YearMonth,YearMonth}`: first and last month of the input files.
     Runs may end earlier; the record of each run ends with the last month for which at
     least one input file exists.
@@ -632,6 +631,9 @@ post-processing performed by [`run_timeseries_statistics`](@ref).
 
 # Optional keyword arguments
 
+  - `groups = InputGroup[]`: `scaleacc` products and variables to read; required (non-empty)
+    for [`run_timeseries_statistics`](@ref). Applications that provide their own input
+    (e.g. `PlanetPostStats.DustOptics`) leave it empty.
   - `postdir = "Post"`: subdirectory of a run directory with the `scaleacc` files.
   - `output_root = nothing`: if given, output goes to `joinpath(output_root, run,
     output_dir)` instead of `joinpath(simpath, run, output_dir)`.
@@ -680,11 +682,11 @@ validate_config(cfg)
 Base.@kwdef struct TimeSeriesConfig
     simpath::String
     runs::Vector{String}
-    groups::Vector{InputGroup}
     sim_period::Tuple{YearMonth,YearMonth}
     stat_period::Tuple{YearMonth,YearMonth}
     output_dir::String
     output_name::String
+    groups::Vector{InputGroup} = InputGroup[]
     postdir::String = "Post"
     output_root::Union{Nothing,String} = nothing
     derived::Vector{DerivedVariable} = DerivedVariable[]
@@ -764,30 +766,42 @@ function variable_names(cfg::TimeSeriesConfig)
 end
 
 """
-    validate_config(cfg::TimeSeriesConfig) -> TimeSeriesConfig
+    validate_config(cfg::TimeSeriesConfig; names=variable_names(cfg), require_groups=true)
+        -> TimeSeriesConfig
 
 Checks a configuration for consistency and throws an `ArgumentError` describing the
-first problem found. Checks: non-empty runs and groups; unique variable names; sources of
-derived variables defined before use; valid simulation and statistics periods, with the
+first problem found. Checks: non-empty runs and (if `require_groups`) groups; unique
+variable names; sources of derived variables defined before use; valid simulation and statistics periods, with the
 statistics window overlapping the simulation period; threshold in (0, 100]; known
 products; `deflatelevel` in 0:9; for `pressure_levels`, a `vertical` coordinate, default levels for the planet if no levels are given, and a
 configured surface-pressure variable; no reserved names (`lon`, `lat`, `level`, `plev`,
 `time`, `year`, `month`, `plm`, `ple`, area variable, `axyp`, `Dates`, `LS1`, `Psf`,
 `Ptop`) used as variable names. Returns `cfg` so that it can be chained.
 
+# Keyword arguments
+
+  - `names = variable_names(cfg)`: names of the variables of the application, checked for
+    uniqueness and reserved names, and searched for the surface-pressure variable of
+    `pressure_levels`. Applications with their own input pass their variable names here.
+  - `require_groups = true`: whether `cfg.groups` must be non-empty.
+
 # Example
 
 ```julia
 julia> validate_config(cfg);  # throws if cfg is inconsistent
+
+julia> validate_config(cfg; names=["effRad3d_PM32Dust", "prsurf"], require_groups=false);
 ```
 """
-function validate_config(cfg::TimeSeriesConfig)
+function validate_config(
+    cfg::TimeSeriesConfig; names=variable_names(cfg), require_groups::Bool=true
+)
     isempty(cfg.runs) && throw(ArgumentError("no runs given"))
     allunique(cfg.runs) || throw(ArgumentError("run identifiers are not unique"))
-    isempty(cfg.groups) && throw(ArgumentError("no input groups given"))
+    require_groups && isempty(cfg.groups) && throw(ArgumentError("no input groups given"))
     allunique(g.product for g in cfg.groups) ||
         throw(ArgumentError("input groups (products) are not unique"))
-    names = variable_names(cfg)
+    names = collect(String, names)
     allunique(names) || throw(ArgumentError("variable names are not unique: $names"))
     reserved = (
         "lon",
