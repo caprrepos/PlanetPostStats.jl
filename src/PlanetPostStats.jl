@@ -1,3 +1,8 @@
+## Author: Jan P. Perlwitz, Climate, Aerosol, and Pollution Research, LLC
+##         (jan.p.perlwitz@caprllc.com)
+## AI cowork: Claude Opus 5.5 (model ID claude-opus-5-5, Anthropic),
+##   used from 2026-10-26 to 2026-11-05
+
 """
     PlanetPostStats
 
@@ -18,6 +23,11 @@ simulations or by a different user.
     simulations, and calculation of multi-year means and standard deviations of annual
     means, seasonal means, and the individual months of the annual cycle within a
     selectable time window. All results are written to NetCDF files.
+  - [`DustOptics`](@ref): optical post-processing of the dust aerosol: dust masses of
+    the size bins of the radiative calculations, effective radii, and scattering,
+    absorption, and extinction optical depths of the layers and the column at selected
+    wavelengths, computed from the `TimeSeriesMeSd` output of the dust tracers and
+    processed into the same time series and statistics.
 
 Further submodules for other post-processing tasks are meant to be added as `src/<SubmoduleName>/<SubmoduleName>.jl` and included below.
 
@@ -44,7 +54,8 @@ results = run_timeseries_statistics(cfg)
 module PlanetPostStats
 
 include(joinpath("TimeSeriesMeSd", "TimeSeriesMeSd.jl"))
+include(joinpath("DustOptics", "DustOptics.jl"))
 
-export TimeSeriesMeSd
+export TimeSeriesMeSd, DustOptics
 
 end # module PlanetPostStats

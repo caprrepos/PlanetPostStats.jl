@@ -304,28 +304,6 @@ function output_pressure_bounds(cfg::TimeSeriesConfig, plm=nothing, ple=nothing)
 end
 
 """
-    pressure_flags(cfg::TimeSeriesConfig) -> Dict{String,Bool}
-
-`to_pressure` flag of every configured variable (input and derived), by name.
-
-# Example
-
-```julia
-julia> pressure_flags(cfg)["airmass"]
-false
-```
-"""
-function pressure_flags(cfg::TimeSeriesConfig)
-    flags = Dict{String,Bool}(
-        v.name => v.to_pressure for g in cfg.groups for v in g.variables
-    )
-    for d in cfg.derived
-        flags[d.name] = d.to_pressure
-    end
-    return flags
-end
-
-"""
     PRESSURE_INTERPOLATION_NOTE
 
 Text of the global attribute `Vertical_interpolation` of output files with variables on

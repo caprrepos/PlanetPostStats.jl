@@ -1,3 +1,8 @@
+## Author: Jan P. Perlwitz, Climate, Aerosol, and Pollution Research, LLC
+##         (jan.p.perlwitz@caprllc.com)
+## AI cowork: Claude Opus 5.5 (model ID claude-opus-5-5, Anthropic),
+##   used from 2026-10-26 to 2026-11-05
+
 """
     TimeSeriesMeSd
 
@@ -126,7 +131,9 @@ export SpatialMeans, PeriodMeans
 export planet_means, annual_means, seasonal_means, multiyear_stats, monthly_stats
 
 # I/O and driver
-export load_run, RunData, GridInfo, VariableData
-export run_timeseries_statistics, process_run, RunResult, annual_summary, seasonal_summary
+export load_run, RunData, GridInfo, VariableData, LazyVariable, AnyVariable
+export field, lookup_variable
+export run_timeseries_statistics, process_run, process_runs, RunResult
+export annual_summary, seasonal_summary
 
 end # module TimeSeriesMeSd
