@@ -1,6 +1,4 @@
-# PlanetPostStats flowcharts
-
-Package version 0.0.3.
+# Flowcharts
 
 Data flow through the two submodules, and the function calls within each. Rectangles are
 functions, rounded boxes are data, cylinders are files. Functions from `PlanetTools` are

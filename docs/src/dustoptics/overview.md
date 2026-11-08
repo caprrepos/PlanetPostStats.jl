@@ -2,8 +2,9 @@
 CurrentModule = PlanetPostStats
 ```
 
-# DustOptics
+# Overview
 
 ```@autodocs
 Modules = [DustOptics]
+Pages = ["DustOptics.jl"]
 ```

@@ -2,8 +2,9 @@
 CurrentModule = PlanetPostStats
 ```
 
-# TimeSeriesMeSd
+# Configuration
 
 ```@autodocs
-Modules = [TimeSeriesMeSd]
+Modules = [DustOptics]
+Pages = ["config.jl"]
 ```
