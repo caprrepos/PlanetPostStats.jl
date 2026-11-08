@@ -314,6 +314,16 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
                 input_name="tracermass3d",
             ),
         )
+        # without fractions: every bin is the whole source tracer
+        @test run_fractions(
+            DustOpticsConfig(;
+                stats=stats,
+                bins=[DustBin("Clay"; radius=1e-6, density=2500)],
+                input_dir="Tracermass3d",
+                input_name="tracermass3d",
+            ),
+            "A",
+        ) == [1.0]
         @test_throws ArgumentError run_fractions(
             DustOpticsConfig(;
                 stats=stats,

@@ -352,6 +352,83 @@ end
         )
     end
 
+    @testset "input reading" begin
+        root = mktempdir()
+        months = yearmonth_range(YearMonth(1, 1), YearMonth(1, 2))
+        make_fake_run(root, "A", months)
+        period = (YearMonth(1, 1), YearMonth(1, 2))
+        # explicit long name overrides the file attribute
+        cfg = test_config(
+            root,
+            ["A"];
+            sim_period=period,
+            stat_period=period,
+            groups=[
+                InputGroup("aij", [InputVariable("prsurf"; units="hPa")]),
+                InputGroup(
+                    "aijl", [InputVariable("z"; units="m", long_name="Geopotential height")]
+                ),
+            ],
+            derived=DerivedVariable[],
+        )
+        rd = load_run(cfg, "A")
+        @test rd.variables["z"].attrib["long_name"] == "Geopotential height"
+        @test rd.variables["prsurf"].attrib["long_name"] == "surface pressure"
+        @test lookup_variable(rd, "z") === rd.variables["z"]
+        @test lookup_variable(rd, "nonexistent") === nothing
+
+        # custom input file names
+        cfgf = test_config(
+            root, ["A"]; filename=(ym, product, run) -> "$(product)_$(run)_$(ym.year).nc"
+        )
+        @test TimeSeriesMeSd.input_filename(cfgf, YearMonth(3, 2), "aij", "A") ==
+            "aij_A_3.nc"
+
+        # existing output files: overwritten, or an error with overwrite = false
+        dir = mktempdir()
+        path = joinpath(dir, "gm.nc")
+        write(path, "old")
+        of = TimeSeriesMeSd.create_output_file(
+            path, cfg, rd, :gm, false; time_cell_method="mean"
+        )
+        @test isfile(path) && filesize(path) > 3
+        @test_throws ArgumentError TimeSeriesMeSd.create_output_file(
+            path,
+            test_config(root, ["A"]; overwrite=false),
+            rd,
+            :gm,
+            false;
+            time_cell_method="mean",
+        )
+        @test_throws ArgumentError TimeSeriesMeSd.write_field!(
+            of, cfg, "x", zeros(Float32, length(rd.months)), OrderedDict{String,Any}(), :foo
+        )
+
+        # 3D variables of different products must have the same number of levels
+        make_fake_run(root, "L", months)
+        path = joinpath(root, "L", "Post", scaleacc_filename(YearMonth(1, 1), "taijl", "L"))
+        rm(path)
+        NCDataset(path, "c") do ds
+            defVar(ds, "lon", LON, ("lon",))
+            defVar(ds, "lat", LAT, ("lat",))
+            defVar(ds, "axyp", AREA, ("lon", "lat"))
+            defVar(ds, "level", Float32[1, 2, 3], ("level",))
+            defVar(ds, "Clay", ones(Float32, NLON, NLAT, 3), ("lon", "lat", "level"))
+        end
+        cfgl = test_config(
+            root,
+            ["L"];
+            sim_period=period,
+            stat_period=period,
+            groups=[
+                InputGroup("aijl", [InputVariable("z"; units="m")]),
+                InputGroup("taijl", [InputVariable("Clay"; scale=1e-8)]),
+            ],
+            derived=DerivedVariable[],
+        )
+        @test_throws DimensionMismatch load_run(cfgl, "L")
+    end
+
     @testset "end-to-end" begin
         root = mktempdir()
         allmonths = yearmonth_range(YearMonth(1, 1), YearMonth(4, 12))
