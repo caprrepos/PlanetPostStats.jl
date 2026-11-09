@@ -18,11 +18,11 @@
 # constants in the section "Settings" at the top; no other code needs to be edited.
 # Replace the paths, run identifiers, and metadata with your own.
 
+using DataFrames
+using OrderedCollections: OrderedDict
 using PlanetPostStats.TimeSeriesMeSd
 using PlanetPostStats.DustOptics
 using PlanetTools: calc_fractional_dust_masses_bft
-using OrderedCollections: OrderedDict
-using DataFrames
 
 ## Settings ===============================================================================
 
@@ -62,15 +62,16 @@ const LS1 = 31      # first layer of pressure coordinates above sigma coordinate
 const PSF = 6.86    # global mean surface pressure (hPa)
 const PTOP = 0.2    # global mean pressure at the bottom of layer LS1 (hPa)
 
-## Optional output on pressure levels (see mkTimeSeriesMeSd_Rocke3d_tracermass3d.jl): only
-## the 3D effective radius is interpolated, the optical depths of the layers are
-## layer-integrated quantities. Needs the surface pressure in the input files.
+## Optional output on pressure levels: 3D variables also on pressure levels in files
+## *.ijp/zmp/gmp.*.nc. `nothing`: no pressure levels; PressureLevels(): default levels of
+## the planet (Mars: 43 levels 18.789-0.099 hPa, DEFAULT_PRESSURE_LEVELS["mars"]);
+## PressureLevels([7.0, 5.0, 3.0, 1.0]): these levels (hPa); PressureLevels(:model):
+## reference levels plm of the input (layer edges Psf, ple); keyword mode=:replace
+## writes them instead of the model levels into the regular files.
 const PRESSURE_LEVELS = nothing
 
-## Statistics ----------------------------------------------------------------------------
-const MISSING_THRESHOLD = 80.0   # percentage threshold required for non-missing data
-
-## Dust size bins of the optical calculations ---------------------------------------------
+## Variables
+# Dust size bins of the optical calculations ---------------------------------------------
 const DUST_BIN_NAMES_RADIA = [
     "Clay1", "Clay2", "Clay3", "Clay4", "Silt1", "Silt2", "Silt3", "Silt4"
 ]
@@ -89,7 +90,7 @@ const CLAY_SOURCE = "Clay"
 const RUN_TAG_FIXED = "RAD"
 const SUBCLAY_WEIGHTS_RAD = [0.009, 0.081, 0.234, 0.676]
 const RUN_TAG_BFT = "AMF"
-const SUBCLAY_BOUNDS = [0.1, 0.36, 0.6, 1.20, 2.00]   # particle diameters (μm)
+const SUBCLAY_BOUNDS = [0.1, 0.36, 0.6, 1.20, 2.00]    # particle diameters (μm)
 const SUBCLAY_BFT_METHOD = :integral                   # :midpoint: earlier approximation
 
 ## Optical-property files of the radiation code and diagnostic wavelengths ---------------
@@ -114,6 +115,10 @@ const SPECTRAL_INTERPOL_LW = joinpath(
     PATH_MARSDUST_SPECTRAL,
     string("aer_lw_interpol_", length(POST_WAVELENGTHS_LW), "_dsa_mars.nc"),
 )
+
+## Statistics ----------------------------------------------------------------------------
+const MISSING_THRESHOLD = 80.0   # percentage threshold required for non-missing data
+const FILL_VALUE = -1.0f30
 
 ## Optical output ------------------------------------------------------------------------
 const QUANTITIES = [:sct, :abs, :ext]  # scattering, absorption, extinction
@@ -142,7 +147,7 @@ const INSPECT_VARIABLES = [
     "abs2d_9300nm_PM32Dust",
     "ext2d_21600nm_PM32Dust",
 ]
-const INSPECT_SEASONS = ["FMA", "ASO"]
+const INSPECT_SEASONS = ["FMA", "MJJ", "ASO", "NDJ"]
 
 ## End of settings ========================================================================
 
@@ -223,6 +228,7 @@ stats = TimeSeriesConfig(;
     pressure_levels=PRESSURE_LEVELS,
     threshold=MISSING_THRESHOLD,
     weight_seasons=WEIGHT_SEASONS,
+    fill_value=FILL_VALUE,
     output_dir=OUTPUT_DIR,
     output_name=OUTPUT_NAME,
     global_attributes=attributes,
@@ -245,20 +251,33 @@ cfg = DustOpticsConfig(;
     extrapolation=EXTRAPOLATION,
 )
 
-## Run -----------------------------------------------------------------------------------
+## Read, calculate, and write ------------------------------------------------------------
+# Per run: monthly, annual, and seasonal time series and multi-year means and standard
+# deviations (annual, seasonal, monthly) of gridded, zonal-mean, and global-mean fields,
+# written to <SIMPATH>/<run>/<OUTPUT_DIR>/{MonthlyTs,AnnualTs,SeasonalTs,AnnualMeSd,
+# SeasonalMeSd,MonthlyMeSd}.
 results = run_dust_optics(cfg)
+[(r.run, length(r.months), length(r.files)) for r in results]
 
 ## Inspect global means --------------------------------------------------------------------
+# Long-time mean of annual global means
 df = annual_summary(results)
-filter(:Varname => in(INSPECT_VARIABLES), df)
-
+# Long-time mean of seasonal global means
 df_seasons = seasonal_summary(results)
-filter(
-    [:Varname, :Season] => (v, s) -> v in INSPECT_VARIABLES && s in INSPECT_SEASONS,
-    df_seasons,
-)
 
+# Show as tables
 # Optional, with SummaryTables.jl in your environment:
-# using SummaryTables
-# listingtable(filter(:Varname => ==("ext2d_550nm_PM32Dust"), df), :MOA; cols=[:Varname],
-#     rows=:Experiment)
+#using SummaryTables
+#println("Long-time mean of annual global means")
+#for var in INSPECT_VARIABLES
+#    dfsel = filter(:Varname => v -> v == var, df)
+#    display(listingtable(dfsel, :MOA; cols=[:Varname], rows=:Experiment, sort=false))
+#end
+
+#println("Long-time mean of seasonal global means")
+#for var in INSPECT_VARIABLES
+#    dfsel = filter([:Varname, :Season] => (v, s) -> v == var && s in INSPECT_SEASONS,
+#        df_seasons)
+#    display(listingtable(dfsel, :MOS; cols=[:Varname, :Season], rows=:Experiment,
+#            sort=false))
+#end
