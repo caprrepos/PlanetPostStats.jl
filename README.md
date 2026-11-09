@@ -71,6 +71,7 @@ All settings are fields of `TimeSeriesConfig`; see its docstring for details.
 | `threshold` | minimum percentage of valid data for every averaging step (default 80) |
 | `weight_seasons` | weight months by their length in seasonal means (default `true`) |
 | `products` | subset of `:mts, :ats, :sts, :moa, :mos, :mom` |
+| `representations_3d` | representations written for 3D variables, subset of `:ij, :zm, :gm` (default all); e.g. `[:zm, :gm]` for only zonal and global means |
 | `output_dir`, `output_name`, `output_root` | output location and file-name tag |
 | `fill_value`, `deflatelevel`, `global_attributes` | NetCDF output settings |
 | `filename` | input file-name function (default `scaleacc_filename`, `<MON><YYYY>.<product><run>.nc`) |
@@ -81,6 +82,12 @@ Per run, in `<simpath>/<run>/<output_dir>/` (or `<output_root>/<run>/<output_dir
 tag is `ij`, `zm`, `gm` (gridded, zonal mean, global mean), or `ijl`, `zml`, `gml` if the
 file contains 3D variables on model levels, or `ijp`, `zmp`, `gmp` if it contains 3D
 variables only on pressure levels.
+
+With `representations_3d = [:zm, :gm]`, the 3D variables (on model and on pressure
+levels) are written only as zonal and global means; the gridded files then contain only
+the 2D variables (tag `ij`), and gridded files that would be empty are not created. The
+gridded monthly time series of the dust tracers (`*.ijl.mts.nc`) are the input of
+`DustOptics`, so keep `:ij` for that run.
 
 | Directory      | Files | Content |
 |:---------------|:------|:--------|

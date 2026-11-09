@@ -536,6 +536,74 @@ end
         end
     end
 
+    @testset "representations of 3D variables" begin
+        root = mktempdir()
+        allmonths = yearmonth_range(YearMonth(1, 1), YearMonth(4, 12))
+        make_fake_run(root, "A", allmonths)
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; representations_3d=Symbol[])
+        )
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; representations_3d=[:zm, :xy])
+        )
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; representations_3d=[:zm, :zm])
+        )
+
+        # only zonal and global means of the 3D variables
+        cfg = test_config(
+            root,
+            ["A"];
+            products=[:mts, :ats, :moa, :sts, :mos, :mom],
+            representations_3d=[:zm, :gm],
+            output_dir="OutZmGm",
+        )
+        res = only(run_timeseries_statistics(cfg))
+        @test all(isfile, res.files)
+        names = basename.(res.files)
+        @test !any(contains(".ijl."), names)
+        @test count(contains(".ij."), names) == count(contains(".zml."), names)
+        @test count(contains(".gml."), names) == count(contains(".zml."), names)
+        out = output_directory(cfg, "A")
+        NCDataset(joinpath(out, "MonthlyTs", "JAN0001-DEC0004.testA.ij.mts.nc")) do ds
+            @test haskey(ds, "prsurf")
+            @test !haskey(ds, "z") && !haskey(ds, "Clay") && !haskey(ds, "PM4Dust")
+            @test !haskey(ds, "level") && !haskey(ds, "plm")
+        end
+        NCDataset(joinpath(out, "MonthlyTs", "JAN0001-DEC0004.testA.zml.mts.nc")) do ds
+            @test size(ds["z"]) == (1, NLAT, NLEV, length(allmonths))
+            @test haskey(ds, "prsurf") && haskey(ds, "plm")
+        end
+        NCDataset(joinpath(out, "AnnualMeSd", "ANN_0002_0004.testA.gml.moa.nc")) do ds
+            @test haskey(ds, "Clay") && haskey(ds, "prsurf")
+        end
+        # same values as with all representations
+        cfga = test_config(root, ["A"]; products=[:moa], output_dir="OutAll")
+        run_timeseries_statistics(cfga)
+        oa = output_directory(cfga, "A")
+        f = joinpath("AnnualMeSd", "ANN_0002_0004.testA.zml.moa.nc")
+        za = NCDataset(ds -> Array(ds["z"]), joinpath(oa, f))
+        zz = NCDataset(ds -> Array(ds["z"]), joinpath(out, f))
+        @test isequal(za, zz)
+
+        # pressure levels added: no gridded file of the pressure-level file set
+        cfgp = test_config(
+            root,
+            ["A"];
+            products=[:mts],
+            representations_3d=[:gm],
+            pressure_levels=PressureLevels([6.0, 3.0]),
+            output_dir="OutGmP",
+        )
+        names = basename.(only(run_timeseries_statistics(cfgp)).files)
+        @test sort(names) == sort([
+            "JAN0001-DEC0004.testA.ij.mts.nc",
+            "JAN0001-DEC0004.testA.zm.mts.nc",
+            "JAN0001-DEC0004.testA.gml.mts.nc",
+            "JAN0001-DEC0004.testA.gmp.mts.nc",
+        ])
+    end
+
     @testset "pressure levels end-to-end" begin
         root = mktempdir()
         allmonths = yearmonth_range(YearMonth(1, 1), YearMonth(4, 12))

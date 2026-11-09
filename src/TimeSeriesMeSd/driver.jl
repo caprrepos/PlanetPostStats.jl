@@ -331,31 +331,27 @@ function process_run(cfg::TimeSeriesConfig, rd::RunData)
     files = OrderedDict{Any,OutputFile}()
     sub(d) = joinpath(outdir, d)
     filesets = unique(e.fileset for e in entries)
-    has_model = Dict(
-        fs => any(e -> e.fileset == fs && e.vertical == :model, entries) for fs in filesets
-    )
-    has_plev = Dict(
-        fs => any(e -> e.fileset == fs && e.vertical == :pressure, entries) for
-        fs in filesets
-    )
-    vtag(fs) =
-        if has_model[fs]
-            "l"
-        elseif has_plev[fs]
-            "p"
-        else
-            ""
-        end
+    # variables with a vertical dimension only in the representations representations_3d
+    written(e, rep) = e.vertical == :none || rep in cfg.representations_3d
+    has_vertical(fs, rep, v) =
+        any(e -> e.fileset == fs && e.vertical == v && written(e, rep), entries)
+    has_entries(fs, rep) = any(e -> e.fileset == fs && written(e, rep), entries)
+    function vtag(fs, rep)
+        has_vertical(fs, rep, :model) && return "l"
+        has_vertical(fs, rep, :pressure) && return "p"
+        return ""
+    end
     function open!(key, dir, kind, rep, prefix, tcm; kw...)
         fs = first(key)
-        name = output_filename(kind, cfg, rd, rep, vtag(fs); prefix=prefix)
+        has_entries(fs, rep) || return nothing
+        name = output_filename(kind, cfg, rd, rep, vtag(fs, rep); prefix=prefix)
         files[key] = create_output_file(
             joinpath(sub(dir), name),
             cfg,
             rd,
             rep,
-            has_model[fs];
-            has_plev=has_plev[fs],
+            has_vertical(fs, rep, :model);
+            has_plev=has_vertical(fs, rep, :pressure),
             time_cell_method=tcm,
             kw...,
         )
@@ -518,8 +514,10 @@ function process_run(cfg::TimeSeriesConfig, rd::RunData)
             monthly = (
                 :ij => (x, nothing), :zm => (sm.zm, sm.zm_w), :gm => (sm.gm, sm.gm_w)
             )
-            write!(key, data) =
-                write_field!(files[(fs, key...)], cfg, name, data, att, e.vertical)
+            function write!(key, data)
+                written(e, key[2]) || return nothing
+                return write_field!(files[(fs, key...)], cfg, name, data, att, e.vertical)
+            end
 
             if :mts in products
                 for (rep, (xr, _)) in monthly
@@ -535,6 +533,7 @@ function process_run(cfg::TimeSeriesConfig, rd::RunData)
                     :gm => (an.gm, an.gm_w),
                 )
                 for (rep, (xr, xw)) in annual_reps
+                    written(e, rep) || continue
                     :ats in products && write!((:ats, rep), xr)
                     do_moa || continue
                     me, sd, _ = multiyear_stats(xr, xw, stat_year_range; threshold=thr)
@@ -556,6 +555,7 @@ function process_run(cfg::TimeSeriesConfig, rd::RunData)
                     :gm => (se.gm, se.gm_w),
                 )
                 for (rep, (xr, xw)) in season_reps
+                    written(e, rep) || continue
                     :sts in products && write!((:sts, rep, k), xr)
                     do_mos[k] || continue
                     me, sd, _ = multiyear_stats(
@@ -574,6 +574,7 @@ function process_run(cfg::TimeSeriesConfig, rd::RunData)
 
             if do_mom
                 for (rep, (xr, xw)) in monthly
+                    written(e, rep) || continue
                     me, sd, _ = monthly_stats(xr, xw, clim; threshold=thr)
                     write!((:mom, rep), me)
                     write!((:som, rep), sd)
