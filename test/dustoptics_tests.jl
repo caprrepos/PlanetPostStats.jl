@@ -71,6 +71,17 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
                     1e-5
             end
         end
+        # density-scaled opacity: τ / m_air with the masses m = f q m_air
+        air = 1.0f0 .+ rand(Float32, sz...)
+        air[3, 2, 1, 1] = 0
+        mq = DustBinMasses(
+            ["Clay", "Silt1"], [clay .* air, silt .* air], [1, 1, 1, 1, 2], f
+        )
+        dso = density_scaled_opacity(mq, c, air)
+        expq = sum(c[b] * f[b] .* (b <= 4 ? clay : silt) for b in 1:5)
+        @test dso[2, 2, 3, 4] ≈ expq[2, 2, 3, 4] rtol = 1e-5
+        @test isnan(dso[1, 1, 1, 1]) && isnan(dso[3, 2, 1, 1])
+        @test_throws DimensionMismatch density_scaled_opacity(mq, c, air[:, :, 1:2, :])
         # columns
         cm = column_masses(m)
         @test size(cm.masses[1]) == (3, 2, 1, 5)
@@ -186,9 +197,31 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             input_name="tracermass3d",
         )
         names = optics_variable_names(cfg)
-        # 3 effective radii + 3 quantities × 2 wavelengths × 2 (layers, columns) ×
-        # (5 bins + 5 classes)
-        @test length(names) == 3 + 3 * 2 * 2 * 10
+        # 3 effective radii + 3 quantities × 2 wavelengths × 3 (layers, columns,
+        # density-scaled opacities) × (5 bins + 5 classes)
+        @test length(names) == 3 + 3 * 2 * 3 * 10
+        @test "extdso_550nm_Clay1" in names && "absdso_890nm_PM4Dust" in names
+        cfgn = DustOpticsConfig(;
+            stats=stats,
+            bins=OPT_BINS,
+            spectral=[set],
+            density_scaled=false,
+            input_dir="Tracermass3d",
+            input_name="tracermass3d",
+        )
+        @test length(optics_variable_names(cfgn)) == 3 + 3 * 2 * 2 * 10
+        @test !any(contains("dso_"), optics_variable_names(cfgn))
+        m1 = DustBinMasses(
+            ["Clay", "Silt1"],
+            [ones(Float32, 1, 1, 1, 1), ones(Float32, 1, 1, 1, 1)],
+            [1, 1, 1, 1, 2],
+            ones(5),
+        )
+        @test_throws ArgumentError optics_variables(
+            cfg, optical_coefficients(cfg; write=false), m1
+        )
+        @test length(optics_variables(cfgn, optical_coefficients(cfgn; write=false), m1)) ==
+            3 + 3 * 2 * 2 * 10
         @test names[1:3] ==
             ["effRad3d_PM4Dust", "effRadColMass_PM4Dust", "effRadColAve_PM4Dust"]
         @test "ext3d_550nm_Clay1" in names && "sct2d_890nm_PM4Dust" in names
@@ -229,6 +262,15 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             @test ds["ext2d_550nm_PM4Dust"][4, 3, t] ≈
                 NLEV * sum(kext(1, b) * mb(b, ym) for b in 1:5) rtol = 1e-5
             @test ds["effRad3d_PM4Dust"][1, 1, 1, t] ≈ reff(ym) rtol = 1e-5
+            # density-scaled opacity: k f q, independent of the air mass
+            @test ds["extdso_550nm_Clay1"][2, 3, 2, t] ≈
+                kext(1, 1) * mb(1, ym) / airmass_val(1, 1, 1, ym) rtol = 1e-5
+            @test ds["sctdso_890nm_PM4Dust"][1, 1, 1, t] ≈
+                sum(ksca_law(0.89e-6, rad[b]) * f[b] * q(b, ym) for b in 1:5) rtol = 1e-5
+            @test ds["extdso_550nm_Clay1"].attrib["units"] == "m2 kg-1"
+            @test ds["extdso_550nm_PM4Dust"].attrib["long_name"] ==
+                "PM4Dust Extinction Density-Scaled Opacity 550 nm"
+            @test dimnames(ds["extdso_550nm_PM4Dust"]) == ("lon", "lat", "level", "time")
             @test ds["effRadColMass_PM4Dust"][1, 1, t] ≈ reff(ym) rtol = 1e-5
             @test ds["effRadColAve_PM4Dust"][1, 1, t] ≈ reff(ym) rtol = 1e-5
             @test ds["effRad3d_PM4Dust"].attrib["units"] == "m"
@@ -281,6 +323,11 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             @test haskey(ds, "effRad3d_PM4Dust")
             @test dimnames(ds["effRad3d_PM4Dust"]) == ("lon", "lat", "plev", "time")
             @test !haskey(ds, "ext3d_550nm_Clay1") && !haskey(ds, "prsurf")
+            # density-scaled opacities are interpolated to the pressure levels
+            @test dimnames(ds["extdso_550nm_PM4Dust"]) == ("lon", "lat", "plev", "time")
+            @test ds["extdso_550nm_PM4Dust"][1, 1, 2, t] ≈
+                sum(kext(1, b) * f[b] * q(b, ym) for b in 1:5) rtol = 1e-5
+            @test !haskey(ds, "ext2d_550nm_PM4Dust")
             # vertically constant composition: the interpolated radius is unchanged
             @test ds["effRad3d_PM4Dust"][1, 1, 2, t] ≈ reff(ym) rtol = 1e-5
         end

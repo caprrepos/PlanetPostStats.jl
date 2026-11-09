@@ -85,6 +85,7 @@ flowchart TD
     RA["column_mean_effective_radius<br/>effRadColAve"]
     T3["combine_bins: τ = Σ k_b m_b<br/>sct3d, abs3d, ext3d"]
     T2["combine_bins ∘ column_masses<br/>sct2d, abs2d, ext2d"]
+    DS["density_scaled_opacity: τ / m_air<br/>sctdso, absdso, extdso"]
     PR["process_run<br/>(shared pipeline)"]
 
     SP --> RST --> ST --> IC --> OC
@@ -94,8 +95,8 @@ flowchart TD
     CFG --> LOR
     DBM --> OV
     OC --> OV
-    OV --> R3 & RC & RA & T3 & T2
-    R3 & RC & RA & T3 & T2 --> PR
+    OV --> R3 & RC & RA & T3 & T2 & DS
+    R3 & RC & RA & T3 & T2 & DS --> PR
 ```
 
 ## 4. Function calls: TimeSeriesMeSd
@@ -181,6 +182,8 @@ flowchart LR
     LV -.-> CMER["column_mean_effective_radius"]
     LV -.-> CB["combine_bins"]
     LV -.-> CM["column_masses"]
+    LV -.-> DSO["density_scaled_opacity"]
+    DSO --> CB
     ER --> CB
     CMER --> ER
     CMER --> CWM["calc_weighted_mean<br/>(PlanetTools)"]

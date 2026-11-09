@@ -38,7 +38,9 @@ dust masses of the size `bins` in the model layers are formed, and from them
   - for every [`SpectralSet`](@ref), diagnostic wavelength, and quantity of
     `quantities`, the optical depth of every bin and every size class in the layers
     (`<q>3d_<λ>_<bin>`, e.g. `ext3d_550nm_Clay1`) and of the column (`<q>2d_<λ>_<bin>`,
-    e.g. `ext2d_550nm_PM32Dust`).
+    e.g. `ext2d_550nm_PM32Dust`), and the density-scaled opacity in the layers, the
+    optical depth of a layer divided by its air mass (`<q>dso_<λ>_<bin>`, e.g.
+    `extdso_21600nm_PM32Dust`, m² kg⁻¹; [`density_scaled_opacity`](@ref)).
 
 All variables are then processed like the variables of `TimeSeriesMeSd` (time series,
 multi-year means and standard deviations; gridded, zonal, and global means), with the
@@ -82,8 +84,11 @@ settings of `stats`.
   - `extrapolation::Symbol = :linear`: extrapolation of the lookup tables, see
     [`interpolate_coefficients`](@ref).
   - `effective_radius_to_pressure::Bool = true`: interpolate the effective radius of the
-    layers to pressure levels when `stats.pressure_levels` is set. The optical depths of
-    the layers are layer-integrated quantities and are never interpolated.
+    layers to pressure levels when `stats.pressure_levels` is set.
+  - `density_scaled::Bool = true`: output the density-scaled opacities of the layers
+    (3D). They do not depend on the layer thickness and are interpolated to pressure
+    levels when `stats.pressure_levels` is set; the optical depths of the layers are
+    layer-integrated quantities and are never interpolated.
 
 With `stats.pressure_levels`, the surface pressure (`stats.pressure_levels.
 surface_pressure`, e.g. `prsurf`) must be contained in the input files; it is read but
@@ -120,6 +125,7 @@ Base.@kwdef struct DustOpticsConfig
     class_variables::Bool = true
     extrapolation::Symbol = :linear
     effective_radius_to_pressure::Bool = true
+    density_scaled::Bool = true
 end
 
 """
@@ -186,8 +192,9 @@ end
     optics_variable_names(cfg::DustOpticsConfig) -> Vector{String}
 
 Names of all output variables of the optical post-processing, in output order: the
-effective radii, then, for every spectral set, quantity, wavelength, and for layers and
-columns, the bins followed by the size classes.
+effective radii, then, for every spectral set, quantity, wavelength, and for the optical
+depths of the layers and the column and the density-scaled opacities, the bins followed
+by the size classes.
 
 # Example
 
@@ -211,9 +218,10 @@ Description of one output variable of the optical post-processing (internal).
 # Fields
 
   - `name::String`, `long_name::String`, `units::String`.
-  - `kind::Symbol`: `:reff3d`, `:reffcolmass`, `:reffcolave`, or `:tau`.
+  - `kind::Symbol`: `:reff3d`, `:reffcolmass`, `:reffcolave`, `:tau` (optical depth),
+    or `:dso` (density-scaled opacity).
   - `is3d::Bool`: layer (3D) or column (2D) variable.
-  - `coefficients::Vector{Float64}`: for `:tau`, coefficient of every bin
+  - `coefficients::Vector{Float64}`: for `:tau` and `:dso`, coefficient of every bin
     (m² kg⁻¹; zero for bins not included).
 
 # Example
@@ -288,8 +296,20 @@ function optics_variable_specs(cfg::DustOpticsConfig, coefficients)
             end
             lab = wavelength_label(λ)
             nm = string(round(Int, λ * 1e9), " nm")
-            for (is3d, dimtag, depth) in ((true, "3d", "AOD"), (false, "2d", "AOT"))
-                (is3d ? cfg.layers : cfg.columns) || continue
+            variants = (
+                (cfg.layers, :tau, true, "3d", "AOD", "1"),
+                (cfg.columns, :tau, false, "2d", "AOT", "1"),
+                (
+                    cfg.density_scaled,
+                    :dso,
+                    true,
+                    "dso",
+                    "Density-Scaled Opacity",
+                    "m2 kg-1",
+                ),
+            )
+            for (active, kind, is3d, dimtag, depth, units) in variants
+                active || continue
                 stem = string(prefix, dimtag, "_", lab, "_")
                 long = string(word, " ", depth, " ", nm)
                 if cfg.bin_variables
@@ -299,7 +319,12 @@ function optics_variable_specs(cfg::DustOpticsConfig, coefficients)
                         push!(
                             specs,
                             OpticsVariableSpec(
-                                stem * bin.name, long * " " * bin.name, "1", :tau, is3d, kb
+                                stem * bin.name,
+                                long * " " * bin.name,
+                                units,
+                                kind,
+                                is3d,
+                                kb,
                             ),
                         )
                     end
@@ -310,7 +335,7 @@ function optics_variable_specs(cfg::DustOpticsConfig, coefficients)
                         push!(
                             specs,
                             OpticsVariableSpec(
-                                stem * class, class * " " * long, "1", :tau, is3d, kc
+                                stem * class, class * " " * long, units, kind, is3d, kc
                             ),
                         )
                     end

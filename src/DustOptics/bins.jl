@@ -286,6 +286,63 @@ function column_masses(m::DustBinMasses)
 end
 
 """
+    density_scaled_opacity(m::DustBinMasses, coefficients, airmass) -> Array{Float32,4}
+
+Density-scaled opacity (m² kg⁻¹) of the layers: the optical depth of a layer divided by
+the air mass of the layer per unit area,
+
+    dso = τ / m_air = Σ_b k_b m_b / m_air = Σ_b k_b f_b q_s,
+
+with the bin masses `m_b = f_b q_s m_air` of `m`, the mass coefficients
+`coefficients` (`k_b`, m² kg⁻¹; zero for bins not included, see
+[`combine_bins`](@ref)), and the air mass `airmass` (kg m⁻²) used to form `m`. It equals
+the extinction (or scattering, absorption) coefficient per unit volume divided by the
+air density, `β / ρ_air`, and the optical depth per unit pressure divided by the
+gravitational acceleration, `(dτ/dp) / g`. Unlike the optical depth of a layer, it does
+not depend on the thickness of the layer: it is proportional to the dust mass mixing
+ratio and can be interpolated to pressure levels. The Mars Climate Sounder reports the
+vertical dust distribution in this quantity [Heavens et al., 2011].
+
+Cells with a missing value or a non-positive air mass are `NaN32`.
+
+# Arguments
+
+  - `m::DustBinMasses`: bin masses of the layers.
+  - `coefficients::AbstractVector{<:Real}`: one coefficient per bin (m² kg⁻¹).
+  - `airmass::AbstractArray{<:Real,4}`: air mass of the layers (kg m⁻²), same size as
+    the arrays of `m`.
+
+# References
+
+  - Heavens, N. G., et al. (2011), The vertical distribution of dust in the Martian
+    atmosphere during northern spring and summer: Observations by the Mars Climate
+    Sounder and analysis of zonal average vertical dust profiles, *J. Geophys. Res.*,
+    116, E04003, doi:10.1029/2010JE003691.
+
+# Example
+
+```julia
+air = fill(2.0f0, 1, 1, 1, 1)
+m = DustBinMasses(["Clay"], [0.5f0 .* air], [1], [1.0])   # q = 0.5 kg kg⁻¹
+density_scaled_opacity(m, [3.0], air)[1]                   # 3 · 0.5 = 1.5 m² kg⁻¹
+```
+"""
+function density_scaled_opacity(
+    m::DustBinMasses, coefficients::AbstractVector{<:Real}, airmass::AbstractArray{<:Real,4}
+)
+    isempty(m.masses) ||
+        size(airmass) == size(m.masses[1]) ||
+        throw(
+            DimensionMismatch(
+                "airmass has size $(size(airmass)), masses $(size(m.masses[1]))"
+            ),
+        )
+    tau = combine_bins(m, coefficients)
+    @. tau = ifelse(airmass > 0, tau / airmass, NaN32)
+    return tau
+end
+
+"""
     effective_radius(m::DustBinMasses, bins) -> Array{Float32,4}
 
 Effective radius (m) of the size distribution given by the bin masses `m` of the size

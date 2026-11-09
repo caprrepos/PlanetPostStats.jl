@@ -76,7 +76,8 @@ returns the [`RunData`](@ref) of the optical post-processing, whose variables ar
  3. Reads the mass mixing ratios of the source tracers of `cfg.bins` (kg kg⁻¹) and the
     air mass `cfg.airmass` (kg m⁻²), and forms the dust mass per unit area of every
     source in every layer, `q · m_air` ([`DustBinMasses`](@ref), with the fractions of
-    [`run_fractions`](@ref)). Only these source masses are held in memory.
+    [`run_fractions`](@ref)). Only these source masses (and, for the density-scaled opacities, the air mass) are held in
+    memory.
  4. With `cfg.stats.pressure_levels`, reads the surface pressure as auxiliary variable.
 
 `coefficients` are the [`OpticalCoefficients`](@ref) of `cfg.spectral` (in order).
@@ -97,7 +98,7 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
     fractions = run_fractions(cfg, run)
     source_index = [findfirst(==(b.source), sources) for b in cfg.bins]
     pl = cfg.stats.pressure_levels
-    grid, months, masses, ps, psattr = NCDataset(path, "r") do ds
+    grid, months, masses, ps, psattr, airmass = NCDataset(path, "r") do ds
         for v in ("year", "month")
             haskey(ds, v) || throw(ArgumentError("variable $v not found in $path"))
         end
@@ -168,10 +169,10 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
             ndims(ps) == 3 || throw(ArgumentError("$sp in $path is not a 2D variable"))
             psattr = TimeSeriesMeSd.attribute_dict(ds[sp].attrib)
         end
-        return grid, months, masses, ps, psattr
+        return grid, months, masses, ps, psattr, cfg.density_scaled ? air : nothing
     end
     m = DustBinMasses(sources, masses, source_index, fractions)
-    variables = optics_variables(cfg, coefficients, m)
+    variables = optics_variables(cfg, coefficients, m; airmass=airmass)
     auxiliary = OrderedDict{String,AnyVariable}()
     if ps !== nothing
         att = OrderedDict{String,Any}(
@@ -184,14 +185,17 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
 end
 
 """
-    optics_variables(cfg::DustOpticsConfig, coefficients, m::DustBinMasses)
-        -> OrderedDict{String,AnyVariable}
+    optics_variables(cfg::DustOpticsConfig, coefficients, m::DustBinMasses;
+                     airmass=nothing) -> OrderedDict{String,AnyVariable}
 
 The output variables of one run as `LazyVariable`s, in the order of
 [`optics_variable_names`](@ref): each computes its field from the bin masses `m` when it
 is written ([`effective_radius`](@ref), [`column_mean_effective_radius`](@ref),
-[`combine_bins`](@ref) of `m` or of [`column_masses`](@ref)`(m)`). The column masses are
-computed once, on first use.
+[`combine_bins`](@ref) of `m` or of [`column_masses`](@ref)`(m)`,
+[`density_scaled_opacity`](@ref)). The column masses are computed once, on first use.
+The density-scaled opacities need the air mass of the layers, `airmass` (kg m⁻²), and
+are interpolated to pressure levels when `cfg.stats.pressure_levels` is set; the
+optical depths of the layers are not.
 
 # Example
 
@@ -200,7 +204,9 @@ vars = optics_variables(cfg, coefs, m)
 size(field(vars["ext2d_550nm_PM32Dust"]))   # (lon, lat, time)
 ```
 """
-function optics_variables(cfg::DustOpticsConfig, coefficients, m::DustBinMasses)
+function optics_variables(
+    cfg::DustOpticsConfig, coefficients, m::DustBinMasses; airmass=nothing
+)
     bins = cfg.bins
     colcache = Ref{Union{Nothing,DustBinMasses}}(nothing)
     function columns()
@@ -218,6 +224,11 @@ function optics_variables(cfg::DustOpticsConfig, coefficients, m::DustBinMasses)
             (() -> to2d(effective_radius(columns(), bins))), false
         elseif spec.kind == :reffcolave
             (() -> column_mean_effective_radius(m, bins)), false
+        elseif spec.kind == :dso
+            airmass === nothing && throw(
+                ArgumentError("density-scaled opacity $(spec.name) needs the air mass"),
+            )
+            (() -> density_scaled_opacity(m, k, airmass)), true
         elseif spec.is3d
             (() -> combine_bins(m, k)), false
         else

@@ -194,21 +194,36 @@ For every run and month:
     in `PlanetTools.accumulate_dust_optics_modele`), in the layers (`<q>3d_<λ>_<bin>`,
     e.g. `ext3d_550nm_Clay1`) and of the column (`<q>2d_<λ>_<bin>`, e.g.
     `ext2d_550nm_PM32Dust`). Units 1.
+  - **Density-scaled opacity.** `dso = τ / m_air = Σ_b k_b f_b q_s` (m² kg⁻¹), the
+    optical depth of a layer divided by its air mass, for every bin and size class
+    (`<q>dso_<λ>_<bin>`, e.g. `extdso_21600nm_PM32Dust`; `density_scaled_opacity`). It
+    equals the extinction coefficient per unit volume divided by the air density and is
+    proportional to the dust mass mixing ratio, so that, unlike the optical depth of a
+    layer, it does not depend on the layer thickness. The Mars Climate Sounder reports
+    the vertical dust distribution in this quantity (Heavens et al., 2011). Output
+    controlled by `density_scaled` (default `true`).
 
 All variables are written with the time series and statistics of `TimeSeriesMeSd`
 (settings of `DustOpticsConfig.stats`). Every variable is computed only when it is
 written, from the source tracer masses of one run, so that memory stays bounded by these
 masses plus a few fields. The selection of the output is controlled by `quantities`,
-`layers`, `columns`, `bin_variables`, and `class_variables`. With
-`stats.pressure_levels`, only the 3D effective radius is interpolated to pressure levels;
-the layer optical depths are layer-integrated quantities and stay on the model levels.
+`layers`, `columns`, `density_scaled`, `bin_variables`, and `class_variables`. With
+`stats.pressure_levels`, the 3D effective radius and the density-scaled opacities are
+interpolated to pressure levels; the layer optical depths are layer-integrated
+quantities and stay on the model levels.
 
 A complete application (ROCKE-3D Mars dust, shortwave and longwave wavelengths, clay
 sub-bin fractions selected by run) is in
 `examples/mkPostDiagTimeSeriesMeSd_Rocke3d_traceroptics3d.jl`.
 
-Reference: Hansen, J. E., and L. D. Travis (1974), Light scattering in planetary
-atmospheres, *Space Sci. Rev.*, 16(4), 527–610, doi:10.1007/BF00168069.
+References:
+
+  - Hansen, J. E., and L. D. Travis (1974), Light scattering in planetary atmospheres,
+    *Space Sci. Rev.*, 16(4), 527–610, doi:10.1007/BF00168069.
+  - Heavens, N. G., et al. (2011), The vertical distribution of dust in the Martian
+    atmosphere during northern spring and summer: Observations by the Mars Climate
+    Sounder and analysis of zonal average vertical dust profiles, *J. Geophys. Res.*,
+    116, E04003, doi:10.1029/2010JE003691.
 
 ## Statistics
 

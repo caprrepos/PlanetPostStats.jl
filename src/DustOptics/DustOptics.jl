@@ -1,7 +1,7 @@
 ## Author: Jan P. Perlwitz, Climate, Aerosol, and Pollution Research, LLC
 ##         (jan.p.perlwitz@caprllc.com)
 ## AI cowork: Claude Opus 5.5 (model ID claude-opus-5-5, Anthropic),
-##   used from 2026-11-04 to 2026-11-05
+##   used from 2026-11-04 to 2026-11-08
 
 """
     DustOptics
@@ -25,7 +25,11 @@ dust tracers `Clay`, `Silt1`, …). For every run and month it computes
     the layers and of the column, at selected diagnostic wavelengths, with the mass
     coefficients `k` interpolated from the optical lookup tables of the radiation code
     to the wavelengths and the effective radii of the bins ([`SpectralTable`](@ref),
-    [`SpectralSet`](@ref), [`interpolate_coefficients`](@ref)).
+    [`SpectralSet`](@ref), [`interpolate_coefficients`](@ref));
+  - the density-scaled opacity of every bin and size class in the layers, the optical
+    depth of a layer divided by its air mass, `τ / m_air` (m² kg⁻¹), which, unlike the
+    layer optical depth, can be interpolated to pressure levels
+    ([`density_scaled_opacity`](@ref)).
 
 All these variables are then written as time series, multi-year means, and standard
 deviations of gridded, zonal-mean, and global-mean fields with the pipeline of
@@ -93,7 +97,7 @@ include("driver.jl")
 # Size bins and array kernels
 export DustBin, bin_sources, bin_fractions, optics_classes
 export DustBinMasses, combine_bins, column_masses
-export effective_radius, column_mean_effective_radius
+export effective_radius, column_mean_effective_radius, density_scaled_opacity
 
 # Optical lookup tables
 export SpectralTable, read_band_bounds, read_spectral_table, wavelength_label
