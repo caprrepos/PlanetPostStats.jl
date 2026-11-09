@@ -76,7 +76,7 @@ flowchart TD
     IC["interpolate_coefficients<br/>log–log in λ and r"]
     OC(["OpticalCoefficients<br/>k_scat, k_abs, g at (λ, r_b)"])
     CF[("aer_*_interpol_*.nc")]
-    MTS[("tracer time series<br/>*.ijl.mts.nc: q_s, m_air")]
+    MTS[("tracer time series<br/>*.ijl.mts.nc: q_s, m_air, T, p_s")]
     LOR["load_optics_run"]
     DBM(["DustBinMasses<br/>m_b = f_b · q_s · m_air"])
     OV["optics_variables"]
@@ -85,7 +85,7 @@ flowchart TD
     RA["column_mean_effective_radius<br/>effRadColAve"]
     T3["combine_bins: τ = Σ k_b m_b<br/>sct3d, abs3d, ext3d"]
     T2["combine_bins ∘ column_masses<br/>sct2d, abs2d, ext2d"]
-    DS["density_scaled_opacity: τ / m_air<br/>sctdso, absdso, extdso"]
+    DS["opacity_per_km: τ ρ_air / m_air<br/>sctkm, abskm, extkm<br/>(density_scaled_opacity: sctdso, …)"]
     PR["process_run<br/>(shared pipeline)"]
 
     SP --> RST --> ST --> IC --> OC
@@ -182,8 +182,12 @@ flowchart LR
     LV -.-> CMER["column_mean_effective_radius"]
     LV -.-> CB["combine_bins"]
     LV -.-> CM["column_masses"]
-    LV -.-> DSO["density_scaled_opacity"]
+    LV -.-> OPK["opacity_per_km"]
+    OPK --> DSO["density_scaled_opacity"]
+    LV -.-> DSO
     DSO --> CB
+    LOR --> LAD["layer_air_density"]
+    LAD --> AD["air_density"]
     ER --> CB
     CMER --> ER
     CMER --> CWM["calc_weighted_mean<br/>(PlanetTools)"]

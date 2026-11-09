@@ -38,9 +38,11 @@ dust masses of the size `bins` in the model layers are formed, and from them
   - for every [`SpectralSet`](@ref), diagnostic wavelength, and quantity of
     `quantities`, the optical depth of every bin and every size class in the layers
     (`<q>3d_<λ>_<bin>`, e.g. `ext3d_550nm_Clay1`) and of the column (`<q>2d_<λ>_<bin>`,
-    e.g. `ext2d_550nm_PM32Dust`), and the density-scaled opacity in the layers, the
-    optical depth of a layer divided by its air mass (`<q>dso_<λ>_<bin>`, e.g.
-    `extdso_21600nm_PM32Dust`, m² kg⁻¹; [`density_scaled_opacity`](@ref)).
+    e.g. `ext2d_550nm_PM32Dust`), and the opacity profiles in the layers selected by
+    `opacity_profiles`: the opacity per kilometer (`<q>km_<λ>_<bin>`, e.g.
+    `extkm_21600nm_PM32Dust`, km⁻¹; [`opacity_per_km`](@ref)) and the density-scaled
+    opacity, the optical depth of a layer divided by its air mass (`<q>dso_<λ>_<bin>`,
+    e.g. `extdso_21600nm_PM32Dust`, m² kg⁻¹; [`density_scaled_opacity`](@ref)).
 
 All variables are then processed like the variables of `TimeSeriesMeSd` (time series,
 multi-year means and standard deviations; gridded, zonal, and global means), with the
@@ -85,14 +87,24 @@ settings of `stats`.
     [`interpolate_coefficients`](@ref).
   - `effective_radius_to_pressure::Bool = true`: interpolate the effective radius of the
     layers to pressure levels when `stats.pressure_levels` is set.
-  - `density_scaled::Bool = true`: output the density-scaled opacities of the layers
-    (3D). They do not depend on the layer thickness and are interpolated to pressure
-    levels when `stats.pressure_levels` is set; the optical depths of the layers are
-    layer-integrated quantities and are never interpolated.
+  - `opacity_profiles::Vector{Symbol} = [:per_km]`: opacity profiles of the layers (3D)
+    to output, a subset of `:per_km` (opacity per kilometer, the quantity of the dust
+    profiles retrieved by the Mars Climate Sounder) and `:density_scaled` (opacity per
+    unit air mass); empty: none. Both do not depend on the layer thickness and are
+    interpolated to pressure levels when `stats.pressure_levels` is set; the optical
+    depths of the layers are layer-integrated quantities and are never interpolated.
+  - `temperature::String = "TempL"`: input variable with the temperature of the layers
+    (K or °C, from its `units` attribute), for the air density of `:per_km`.
+  - `gas_constant::Float64 = 188.92`: specific gas constant of the atmosphere
+    (J kg⁻¹ K⁻¹; CO₂: 8.314462618 / 0.0440095) for the air density of `:per_km`.
+  - `surface_pressure::String = "prsurf"`: input variable with the surface pressure
+    (hPa), for the air density of `:per_km`.
 
-With `stats.pressure_levels`, the surface pressure (`stats.pressure_levels.
-surface_pressure`, e.g. `prsurf`) must be contained in the input files; it is read but
-not written.
+The opacity per kilometer needs the layer temperature and the surface pressure in the
+input files, and `stats.vertical`; the air density is computed with
+[`air_density`](@ref). With `stats.pressure_levels`, the surface pressure of the pressure
+levels (`stats.pressure_levels.surface_pressure`) must be contained in the input files.
+These auxiliary variables are read but not written.
 
 # Example
 
@@ -125,7 +137,29 @@ Base.@kwdef struct DustOpticsConfig
     class_variables::Bool = true
     extrapolation::Symbol = :linear
     effective_radius_to_pressure::Bool = true
-    density_scaled::Bool = true
+    opacity_profiles::Vector{Symbol} = [:per_km]
+    temperature::String = "TempL"
+    gas_constant::Float64 = 188.92
+    surface_pressure::String = "prsurf"
+end
+
+"""
+    needs_density(cfg::DustOpticsConfig) -> Bool
+
+Whether the configuration outputs opacities per kilometer, which need the air density
+of the layers (layer temperature and surface pressure in the input files).
+
+# Example
+
+```julia
+julia> needs_density(cfg)              # default opacity_profiles = [:per_km]
+true
+```
+"""
+function needs_density(cfg::DustOpticsConfig)
+    return :per_km in cfg.opacity_profiles &&
+           !isempty(cfg.spectral) &&
+           !isempty(cfg.quantities)
 end
 
 """
@@ -219,9 +253,9 @@ Description of one output variable of the optical post-processing (internal).
 
   - `name::String`, `long_name::String`, `units::String`.
   - `kind::Symbol`: `:reff3d`, `:reffcolmass`, `:reffcolave`, `:tau` (optical depth),
-    or `:dso` (density-scaled opacity).
+    `:km` (opacity per kilometer), or `:dso` (density-scaled opacity).
   - `is3d::Bool`: layer (3D) or column (2D) variable.
-  - `coefficients::Vector{Float64}`: for `:tau` and `:dso`, coefficient of every bin
+  - `coefficients::Vector{Float64}`: for `:tau`, `:km`, and `:dso`, coefficient of every bin
     (m² kg⁻¹; zero for bins not included).
 
 # Example
@@ -300,7 +334,15 @@ function optics_variable_specs(cfg::DustOpticsConfig, coefficients)
                 (cfg.layers, :tau, true, "3d", "AOD", "1"),
                 (cfg.columns, :tau, false, "2d", "AOT", "1"),
                 (
-                    cfg.density_scaled,
+                    :per_km in cfg.opacity_profiles,
+                    :km,
+                    true,
+                    "km",
+                    "Opacity per km",
+                    "km-1",
+                ),
+                (
+                    :density_scaled in cfg.opacity_profiles,
                     :dso,
                     true,
                     "dso",
@@ -380,10 +422,26 @@ function validate_optics_config(cfg::DustOpticsConfig)
         @warn "DustOpticsConfig: stats.groups are not used by the optical post-processing"
     isempty(cfg.stats.derived) ||
         @warn "DustOpticsConfig: stats.derived are not used by the optical post-processing"
+    for p in cfg.opacity_profiles
+        p in (:per_km, :density_scaled) || throw(
+            ArgumentError("unknown opacity profile :$p (known: :per_km, :density_scaled)"),
+        )
+    end
+    allunique(cfg.opacity_profiles) ||
+        throw(ArgumentError("opacity_profiles are not unique"))
+    if :per_km in cfg.opacity_profiles && !isempty(cfg.spectral) && !isempty(cfg.quantities)
+        cfg.stats.vertical === nothing && throw(
+            ArgumentError("opacity per km needs the vertical coordinate stats.vertical")
+        )
+        cfg.gas_constant > 0 || throw(ArgumentError("gas_constant must be positive"))
+    end
     names = optics_variable_names(cfg)
     allunique(names) || throw(ArgumentError("output variable names are not unique"))
     pl = cfg.stats.pressure_levels
-    checked = pl === nothing ? names : [names; pl.surface_pressure]
+    aux = String[]
+    pl === nothing || push!(aux, pl.surface_pressure)
+    needs_density(cfg) && push!(aux, cfg.surface_pressure, cfg.temperature)
+    checked = [names; setdiff(unique(aux), names)]
     validate_config(cfg.stats; names=checked, require_groups=false)
     return cfg
 end

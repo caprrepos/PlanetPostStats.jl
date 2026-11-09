@@ -26,6 +26,8 @@ const OPT_BINS = [
 ]
 const CLAY_SPLIT = [0.009, 0.081, 0.234, 0.676]
 const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
+const PLM = [5.0, 1.0]                          # plm of the fixture
+const VC = VerticalCoordinate(31, 6.86, 0.2)    # vertical coordinate of test_config
 
 @testset "PlanetPostStats.DustOptics" begin
     @testset "bins and kernels" begin
@@ -82,6 +84,25 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
         @test dso[2, 2, 3, 4] ≈ expq[2, 2, 3, 4] rtol = 1e-5
         @test isnan(dso[1, 1, 1, 1]) && isnan(dso[3, 2, 1, 1])
         @test_throws DimensionMismatch density_scaled_opacity(mq, c, air[:, :, 1:2, :])
+        # air density and opacity per km
+        vc = VerticalCoordinate(31, 6.86, 0.2)
+        psx = fill(7.5f0, sz[1], sz[2], sz[4])
+        Tx = 150.0f0 .+ 50.0f0 .* rand(Float32, sz...)
+        Tx[1, 2, 1, 1] = NaN32
+        plmx = [5.0, 3.0, 1.0, 0.5]
+        rho = air_density(psx, Tx, plmx, vc, 188.92)
+        p3 = 100 * layer_pressure(7.5, plmx[3], 3, vc)
+        @test rho[2, 1, 3, 2] ≈ p3 / (188.92 * Tx[2, 1, 3, 2]) rtol = 1e-5
+        @test isnan(rho[1, 2, 1, 1])
+        @test_throws DimensionMismatch air_density(psx[:, :, 1:2], Tx, plmx, vc, 188.92)
+        @test_throws DimensionMismatch air_density(psx, Tx, plmx[1:3], vc, 188.92)
+        @test_throws ArgumentError air_density(psx, Tx, plmx, vc, 0.0)
+        beta = opacity_per_km(mq, c, air, rho)
+        @test beta[2, 2, 3, 4] ≈ 1000 * dso[2, 2, 3, 4] * rho[2, 2, 3, 4] rtol = 1e-5
+        @test_throws DimensionMismatch opacity_per_km(mq, c, air, rho[:, :, 1:2, :])
+        @test DustOptics.temperature_offset("degC") == 273.15
+        @test DustOptics.temperature_offset(" K ") == 0.0
+        @test_throws ArgumentError DustOptics.temperature_offset("F")
         # columns
         cm = column_masses(m)
         @test size(cm.masses[1]) == (3, 2, 1, 5)
@@ -165,6 +186,23 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
         tracer = test_config(
             root,
             ["A"];
+            groups=[
+                InputGroup("aij", [InputVariable("prsurf"; units="hPa")]),
+                InputGroup(
+                    "aijl",
+                    [
+                        InputVariable("airmass"; units="kg m-2", to_pressure=false),
+                        InputVariable("TempL"; units="K"),
+                    ],
+                ),
+                InputGroup(
+                    "taijl",
+                    [
+                        InputVariable("Clay"; scale=1e-8, units="kg kg-1"),
+                        InputVariable("Silt1"; scale=1e-8, units="kg kg-1"),
+                    ],
+                ),
+            ],
             products=[:mts],
             output_dir="Tracermass3d",
             output_name="tracermass3d",
@@ -193,24 +231,37 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             bins=OPT_BINS,
             spectral=[set],
             fractions=Dict("A" => bin_fractions(OPT_BINS, "Clay" => CLAY_SPLIT)),
+            opacity_profiles=[:per_km, :density_scaled],
             input_dir="Tracermass3d",
             input_name="tracermass3d",
         )
         names = optics_variable_names(cfg)
-        # 3 effective radii + 3 quantities × 2 wavelengths × 3 (layers, columns,
-        # density-scaled opacities) × (5 bins + 5 classes)
-        @test length(names) == 3 + 3 * 2 * 3 * 10
+        # 3 effective radii + 3 quantities × 2 wavelengths × 4 (layers, columns, opacity
+        # per km, density-scaled opacities) × (5 bins + 5 classes)
+        @test length(names) == 3 + 3 * 2 * 4 * 10
         @test "extdso_550nm_Clay1" in names && "absdso_890nm_PM4Dust" in names
+        @test "extkm_550nm_Clay1" in names && "sctkm_890nm_PM4Dust" in names
+        cfgd = DustOpticsConfig(;
+            stats=stats,
+            bins=OPT_BINS,
+            spectral=[set],
+            input_dir="Tracermass3d",
+            input_name="tracermass3d",
+        )
+        @test cfgd.opacity_profiles == [:per_km] && needs_density(cfgd)
+        @test length(optics_variable_names(cfgd)) == 3 + 3 * 2 * 3 * 10
+        @test !any(contains("dso_"), optics_variable_names(cfgd))
         cfgn = DustOpticsConfig(;
             stats=stats,
             bins=OPT_BINS,
             spectral=[set],
-            density_scaled=false,
+            opacity_profiles=Symbol[],
             input_dir="Tracermass3d",
             input_name="tracermass3d",
         )
         @test length(optics_variable_names(cfgn)) == 3 + 3 * 2 * 2 * 10
         @test !any(contains("dso_"), optics_variable_names(cfgn))
+        @test !any(contains("km_"), optics_variable_names(cfgn)) && !needs_density(cfgn)
         m1 = DustBinMasses(
             ["Clay", "Silt1"],
             [ones(Float32, 1, 1, 1, 1), ones(Float32, 1, 1, 1, 1)],
@@ -271,6 +322,17 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             @test ds["extdso_550nm_PM4Dust"].attrib["long_name"] ==
                 "PM4Dust Extinction Density-Scaled Opacity 550 nm"
             @test dimnames(ds["extdso_550nm_PM4Dust"]) == ("lon", "lat", "level", "time")
+            # opacity per km: dso · ρ · 1000, ρ = p / (R T) at the layer mid-point
+            for (i, j, l) in ((2, 3, 1), (4, 1, 2))
+                p = 100 * layer_pressure(prsurf_val(i, j, ym), PLM[l], l, VC)
+                ρ = p / (188.92 * temp_val(i, j, l, ym))
+                dsoe = sum(kext(1, b) * f[b] * q(b, ym) for b in 1:5)
+                @test ds["extkm_550nm_PM4Dust"][i, j, l, t] ≈ 1000 * dsoe * ρ rtol = 1e-4
+            end
+            @test ds["extkm_550nm_PM4Dust"].attrib["units"] == "km-1"
+            @test ds["sctkm_890nm_Clay1"].attrib["long_name"] ==
+                "Scattering Opacity per km 890 nm Clay1"
+            @test !haskey(ds, "TempL")
             @test ds["effRadColMass_PM4Dust"][1, 1, t] ≈ reff(ym) rtol = 1e-5
             @test ds["effRadColAve_PM4Dust"][1, 1, t] ≈ reff(ym) rtol = 1e-5
             @test ds["effRad3d_PM4Dust"].attrib["units"] == "m"
@@ -323,10 +385,14 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             @test haskey(ds, "effRad3d_PM4Dust")
             @test dimnames(ds["effRad3d_PM4Dust"]) == ("lon", "lat", "plev", "time")
             @test !haskey(ds, "ext3d_550nm_Clay1") && !haskey(ds, "prsurf")
-            # density-scaled opacities are interpolated to the pressure levels
-            @test dimnames(ds["extdso_550nm_PM4Dust"]) == ("lon", "lat", "plev", "time")
-            @test ds["extdso_550nm_PM4Dust"][1, 1, 2, t] ≈
-                sum(kext(1, b) * f[b] * q(b, ym) for b in 1:5) rtol = 1e-5
+            # opacities per km are interpolated to the pressure levels; 6 hPa lies
+            # between the surface and the lowest layer mid-point: value of layer 1
+            @test dimnames(ds["extkm_550nm_PM4Dust"]) == ("lon", "lat", "plev", "time")
+            p = 100 * layer_pressure(prsurf_val(1, 1, ym), PLM[1], 1, VC)
+            ρ = p / (188.92 * temp_val(1, 1, 1, ym))
+            @test ds["extkm_550nm_PM4Dust"][1, 1, 1, t] ≈
+                1000 * sum(kext(1, b) * f[b] * q(b, ym) for b in 1:5) * ρ rtol = 1e-4
+            @test !haskey(ds, "extdso_550nm_PM4Dust")
             @test !haskey(ds, "ext2d_550nm_PM4Dust")
             # vertically constant composition: the interpolated radius is unchanged
             @test ds["effRad3d_PM4Dust"][1, 1, 2, t] ≈ reff(ym) rtol = 1e-5
@@ -350,6 +416,74 @@ const OPT_WAVELENGTHS = [0.55e-6, 0.89e-6]
             input_prefix="JAN0001-DEC0004",
         )
         @test isfile(input_file(cfgx, "A"))
+
+        # opacity profiles: configuration and inputs
+        okw = (;
+            stats=stats,
+            bins=OPT_BINS,
+            spectral=[set],
+            input_dir="Tracermass3d",
+            input_name="tracermass3d",
+        )
+        @test_throws ArgumentError validate_optics_config(
+            DustOpticsConfig(; okw..., opacity_profiles=[:per_m])
+        )
+        @test_throws ArgumentError validate_optics_config(
+            DustOpticsConfig(; okw..., opacity_profiles=[:per_km, :per_km])
+        )
+        @test_throws ArgumentError validate_optics_config(
+            DustOpticsConfig(; okw..., gas_constant=-1.0)
+        )
+        nov = test_config(
+            root,
+            ["A"];
+            groups=InputGroup[],
+            derived=DerivedVariable[],
+            vertical=nothing,
+            output_dir="X",
+        )
+        @test_throws ArgumentError validate_optics_config(
+            DustOpticsConfig(; okw..., stats=nov)
+        )
+        @test validate_optics_config(
+            DustOpticsConfig(; okw..., stats=nov, opacity_profiles=[:density_scaled])
+        ) isa DustOpticsConfig
+        coefs = optical_coefficients(cfg; write=false)
+        @test_throws ArgumentError load_optics_run(
+            DustOpticsConfig(; okw..., temperature="Tnone"), coefs, "A"
+        )
+        @test_throws ArgumentError optics_variables(
+            DustOpticsConfig(; okw...), coefs, m1; airmass=ones(Float32, 1, 1, 1, 1)
+        )
+        tdir = mktempdir()
+        tpath = joinpath(tdir, "t.nc")
+        NCDataset(tpath, "c") do ds
+            defVar(ds, "prsurf", fill(6.86f0, 1, 1, 1), ("lon", "lat", "time"))
+            defVar(ds, "TempL", fill(200.0f0, 1, 1, 1, 1), ("lon", "lat", "level", "time"))
+            defVar(
+                ds,
+                "TC",
+                fill(-73.15f0, 1, 1, 1, 1),
+                ("lon", "lat", "level", "time");
+                attrib=Dict("units" => "degC"),
+            )
+        end
+        NCDataset(tpath) do ds
+            ρk = @test_logs (:warn, r"no units") DustOptics.layer_air_density(
+                DustOpticsConfig(; okw...), ds, tpath, 1:1, [5.0]
+            )
+            @test ρk[1] ≈ 500 / (188.92 * 200) rtol = 1e-5
+            ρc = DustOptics.layer_air_density(
+                DustOpticsConfig(; okw..., temperature="TC"), ds, tpath, 1:1, [5.0]
+            )
+            @test ρc[1] ≈ ρk[1] rtol = 1e-5
+            @test_throws ArgumentError DustOptics.layer_air_density(
+                DustOpticsConfig(; okw..., surface_pressure="ps"), ds, tpath, 1:1, [5.0]
+            )
+            @test_throws ArgumentError DustOptics.layer_air_density(
+                DustOpticsConfig(; okw...), ds, tpath, 1:1, nothing
+            )
+        end
 
         # configuration checks
         @test_throws ArgumentError validate_optics_config(

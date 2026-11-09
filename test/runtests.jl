@@ -17,6 +17,7 @@ const AREA = [cosd(lat) for _ in LON, lat in LAT]
 prsurf_val(i, j, ym) = 6.0 + ym.year + 0.01 * i
 z_val(i, j, l, ym) = 1000.0 * l + j
 airmass_val(i, j, l, ym) = Float64(ym.month)
+temp_val(i, j, l, ym) = 180.0 + 10.0 * l + j + 0.1 * ym.month
 clay_raw(i, j, l, ym) = 100.0 + ym.year          # file units: 1e-8 kg/kg
 silt_raw(i, j, l, ym) = 50.0
 
@@ -84,6 +85,18 @@ function make_fake_run(
                             ("lon", "lat", "level");
                             attrib=OrderedDict(
                                 "units" => "kg/m2", "long_name" => "air mass"
+                            ),
+                        )
+                        defVar(
+                            ds,
+                            "TempL",
+                            Float32[
+                                temp_val(i, j, l, ym) for
+                                i in 1:NLON, j in 1:NLAT, l in 1:NLEV
+                            ],
+                            ("lon", "lat", "level");
+                            attrib=OrderedDict(
+                                "units" => "K", "long_name" => "layer temperature"
                             ),
                         )
                     else

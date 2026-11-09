@@ -79,6 +79,9 @@ returns the [`RunData`](@ref) of the optical post-processing, whose variables ar
     [`run_fractions`](@ref)). Only these source masses (and, for the density-scaled opacities, the air mass) are held in
     memory.
  4. With `cfg.stats.pressure_levels`, reads the surface pressure as auxiliary variable.
+ 5. For the opacities per kilometer, computes the air density of the layers from the
+    layer temperature and the surface pressure ([`layer_air_density`](@ref)); the air
+    mass and the air density are then also held in memory.
 
 `coefficients` are the [`OpticalCoefficients`](@ref) of `cfg.spectral` (in order).
 
@@ -98,7 +101,9 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
     fractions = run_fractions(cfg, run)
     source_index = [findfirst(==(b.source), sources) for b in cfg.bins]
     pl = cfg.stats.pressure_levels
-    grid, months, masses, ps, psattr, airmass = NCDataset(path, "r") do ds
+    profiles = !isempty(cfg.opacity_profiles) && !isempty(cfg.spectral)
+    density_needed = needs_density(cfg)
+    grid, months, masses, ps, psattr, airmass, density = NCDataset(path, "r") do ds
         for v in ("year", "month")
             haskey(ds, v) || throw(ArgumentError("variable $v not found in $path"))
         end
@@ -122,12 +127,12 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
                 "$(sources[1]) in $path must have the dimensions (lon, lat, level, time)",
             ),
         )
-        for v in [sources; cfg.airmass]
+        for v in [sources; cfg.airmass; density_needed ? cfg.temperature : String[]]
             haskey(ds, v) || throw(ArgumentError("variable $v not found in $path"))
             collect(String, dimnames(ds[v])) == dn || throw(
                 DimensionMismatch(
                     "$v in $path has the dimensions $(dimnames(ds[v])), expected $dn " *
-                    "(all tracers and the air mass on the model levels)",
+                    "(tracers, air mass, and temperature on the model levels)",
                 ),
             )
         end
@@ -169,10 +174,14 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
             ndims(ps) == 3 || throw(ArgumentError("$sp in $path is not a 2D variable"))
             psattr = TimeSeriesMeSd.attribute_dict(ds[sp].attrib)
         end
-        return grid, months, masses, ps, psattr, cfg.density_scaled ? air : nothing
+        density = nothing
+        if density_needed
+            density = layer_air_density(cfg, ds, path, tidx, plm)
+        end
+        return grid, months, masses, ps, psattr, profiles ? air : nothing, density
     end
     m = DustBinMasses(sources, masses, source_index, fractions)
-    variables = optics_variables(cfg, coefficients, m; airmass=airmass)
+    variables = optics_variables(cfg, coefficients, m; airmass=airmass, density=density)
     auxiliary = OrderedDict{String,AnyVariable}()
     if ps !== nothing
         att = OrderedDict{String,Any}(
@@ -185,17 +194,88 @@ function load_optics_run(cfg::DustOpticsConfig, coefficients, run::AbstractStrin
 end
 
 """
+    temperature_offset(units) -> Float64
+
+Offset (K) that converts a temperature with the units attribute `units` to kelvin: 0 for
+kelvin (`K`, `kelvin`, `degK`), 273.15 for degrees Celsius (`C`, `degC`, `deg C`, `°C`,
+`degrees_C`, `degree_Celsius`, `Celsius`); case-insensitive. Throws an `ArgumentError`
+for other units.
+
+# Example
+
+```julia
+julia> temperature_offset("degC"), temperature_offset("K")
+(273.15, 0.0)
+```
+"""
+function temperature_offset(units::AbstractString)
+    u = lowercase(strip(units))
+    u in ("k", "kelvin", "degk", "deg k", "degrees_k") && return 0.0
+    u in (
+        "c",
+        "degc",
+        "deg c",
+        "°c",
+        "degrees_c",
+        "degree_c",
+        "degree_celsius",
+        "degrees_celsius",
+        "celsius",
+    ) && return 273.15
+    return throw(ArgumentError("unknown temperature units \"$units\" (K or °C expected)"))
+end
+
+"""
+    layer_air_density(cfg::DustOpticsConfig, ds, path, tidx, plm) -> Array{Float32,4}
+
+Air density (kg m⁻³) of the model layers of the open input dataset `ds` (file `path`)
+for the time indices `tidx`, with [`air_density`](@ref) from the surface pressure
+`cfg.surface_pressure` (hPa), the layer temperature `cfg.temperature` (K or °C, see
+[`temperature_offset`](@ref); kelvin assumed with a warning if the variable has no
+`units` attribute), the reference mid-layer pressures `plm`, `cfg.stats.vertical`, and
+`cfg.gas_constant`.
+
+# Example
+
+```julia
+NCDataset(path) do ds
+    layer_air_density(cfg, ds, path, 1:240, ds["plm"][:])
+end
+```
+"""
+function layer_air_density(cfg::DustOpticsConfig, ds, path, tidx, plm)
+    sp, tv = cfg.surface_pressure, cfg.temperature
+    haskey(ds, sp) ||
+        throw(ArgumentError("surface pressure $sp (opacity per km) not found in $path"))
+    plm === nothing &&
+        throw(ArgumentError("reference pressures plm (opacity per km) not found in $path"))
+    ps = read_field(ds, sp, tidx)
+    ndims(ps) == 3 || throw(ArgumentError("$sp in $path is not a 2D variable"))
+    T = read_field(ds, tv, tidx)
+    units = get(ds[tv].attrib, "units", nothing)
+    offset = if units === nothing
+        @warn "Temperature $tv in $path has no units attribute; kelvin assumed"
+        0.0
+    else
+        temperature_offset(units)
+    end
+    iszero(offset) || (T .+= Float32(offset))
+    return air_density(ps, T, plm, cfg.stats.vertical, cfg.gas_constant)
+end
+
+"""
     optics_variables(cfg::DustOpticsConfig, coefficients, m::DustBinMasses;
-                     airmass=nothing) -> OrderedDict{String,AnyVariable}
+                     airmass=nothing, density=nothing) -> OrderedDict{String,AnyVariable}
 
 The output variables of one run as `LazyVariable`s, in the order of
 [`optics_variable_names`](@ref): each computes its field from the bin masses `m` when it
 is written ([`effective_radius`](@ref), [`column_mean_effective_radius`](@ref),
 [`combine_bins`](@ref) of `m` or of [`column_masses`](@ref)`(m)`,
-[`density_scaled_opacity`](@ref)). The column masses are computed once, on first use.
-The density-scaled opacities need the air mass of the layers, `airmass` (kg m⁻²), and
-are interpolated to pressure levels when `cfg.stats.pressure_levels` is set; the
-optical depths of the layers are not.
+[`opacity_per_km`](@ref), [`density_scaled_opacity`](@ref)). The column masses are
+computed once, on first use. The opacity profiles need the air mass of the layers,
+`airmass` (kg m⁻²), the opacities per kilometer also the air density, `density`
+(kg m⁻³); both profiles are interpolated to pressure levels when
+`cfg.stats.pressure_levels` is set, the optical depths of the layers are not.
 
 # Example
 
@@ -205,7 +285,7 @@ size(field(vars["ext2d_550nm_PM32Dust"]))   # (lon, lat, time)
 ```
 """
 function optics_variables(
-    cfg::DustOpticsConfig, coefficients, m::DustBinMasses; airmass=nothing
+    cfg::DustOpticsConfig, coefficients, m::DustBinMasses; airmass=nothing, density=nothing
 )
     bins = cfg.bins
     colcache = Ref{Union{Nothing,DustBinMasses}}(nothing)
@@ -224,6 +304,13 @@ function optics_variables(
             (() -> to2d(effective_radius(columns(), bins))), false
         elseif spec.kind == :reffcolave
             (() -> column_mean_effective_radius(m, bins)), false
+        elseif spec.kind == :km
+            (airmass === nothing || density === nothing) && throw(
+                ArgumentError(
+                    "opacity per km $(spec.name) needs the air mass and the air density",
+                ),
+            )
+            (() -> opacity_per_km(m, k, airmass, density)), true
         elseif spec.kind == :dso
             airmass === nothing && throw(
                 ArgumentError("density-scaled opacity $(spec.name) needs the air mass"),

@@ -201,21 +201,31 @@ For every run and month:
     in `PlanetTools.accumulate_dust_optics_modele`), in the layers (`<q>3d_<λ>_<bin>`,
     e.g. `ext3d_550nm_Clay1`) and of the column (`<q>2d_<λ>_<bin>`, e.g.
     `ext2d_550nm_PM32Dust`). Units 1.
-  - **Density-scaled opacity.** `dso = τ / m_air = Σ_b k_b f_b q_s` (m² kg⁻¹), the
-    optical depth of a layer divided by its air mass, for every bin and size class
-    (`<q>dso_<λ>_<bin>`, e.g. `extdso_21600nm_PM32Dust`; `density_scaled_opacity`). It
-    equals the extinction coefficient per unit volume divided by the air density and is
-    proportional to the dust mass mixing ratio, so that, unlike the optical depth of a
-    layer, it does not depend on the layer thickness. The Mars Climate Sounder reports
-    the vertical dust distribution in this quantity (Heavens et al., 2011). Output
-    controlled by `density_scaled` (default `true`).
+  - **Opacity profiles** of the layers, for every bin and size class, selected by
+    `opacity_profiles` (default `[:per_km]`). Unlike the optical depth of a layer, they
+    do not depend on the layer thickness:
+      - `:per_km` — opacity per kilometer, the extinction (scattering, absorption)
+        coefficient per unit volume, `β = dso · ρ_air · 1000` (km⁻¹;
+        `<q>km_<λ>_<bin>`, e.g. `extkm_21600nm_PM32Dust`; `opacity_per_km`), the quantity
+        of the dust opacity profiles retrieved by the Mars Climate Sounder at pressure
+        levels. The air density of the layers is `ρ_air = p / (R T)` (`air_density`),
+        with the mid-layer pressure `p` from the surface pressure (`surface_pressure`,
+        default `prsurf`, hPa) and the σ–p coordinate, the layer temperature
+        (`temperature`, default `TempL`, K or °C), and the specific gas constant
+        (`gas_constant`, default 188.92 J kg⁻¹ K⁻¹ for CO₂). Surface pressure and layer
+        temperature must therefore be contained in the input files.
+      - `:density_scaled` — density-scaled opacity, `dso = τ / m_air = Σ_b k_b f_b q_s`
+        (m² kg⁻¹; `<q>dso_<λ>_<bin>`, e.g. `extdso_21600nm_PM32Dust`;
+        `density_scaled_opacity`), proportional to the dust mass mixing ratio; Heavens et
+        al. (2011) introduce it to derive the dust mass mixing ratio from the opacity
+        profiles.
 
 All variables are written with the time series and statistics of `TimeSeriesMeSd`
 (settings of `DustOpticsConfig.stats`). Every variable is computed only when it is
 written, from the source tracer masses of one run, so that memory stays bounded by these
 masses plus a few fields. The selection of the output is controlled by `quantities`,
-`layers`, `columns`, `density_scaled`, `bin_variables`, and `class_variables`. With
-`stats.pressure_levels`, the 3D effective radius and the density-scaled opacities are
+`layers`, `columns`, `opacity_profiles`, `bin_variables`, and `class_variables`. With
+`stats.pressure_levels`, the 3D effective radius and the opacity profiles are
 interpolated to pressure levels; the layer optical depths are layer-integrated
 quantities and stay on the model levels.
 

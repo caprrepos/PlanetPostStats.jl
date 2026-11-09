@@ -1,7 +1,7 @@
 ## Author: Jan P. Perlwitz, Climate, Aerosol, and Pollution Research, LLC
 ##         (jan.p.perlwitz@caprllc.com)
 ## AI cowork: Claude Opus 5.5 (model ID claude-opus-5-5, Anthropic),
-##   used from 2026-11-04 to 2026-11-08
+##   used from 2026-11-04 to 2026-11-09
 
 """
     DustOptics
@@ -26,10 +26,12 @@ dust tracers `Clay`, `Silt1`, …). For every run and month it computes
     coefficients `k` interpolated from the optical lookup tables of the radiation code
     to the wavelengths and the effective radii of the bins ([`SpectralTable`](@ref),
     [`SpectralSet`](@ref), [`interpolate_coefficients`](@ref));
-  - the density-scaled opacity of every bin and size class in the layers, the optical
-    depth of a layer divided by its air mass, `τ / m_air` (m² kg⁻¹), which, unlike the
-    layer optical depth, can be interpolated to pressure levels
-    ([`density_scaled_opacity`](@ref)).
+  - the opacity profiles of every bin and size class in the layers, which, unlike the
+    layer optical depth, can be interpolated to pressure levels: the opacity per
+    kilometer `β = τ ρ_air / m_air` (km⁻¹, by default; [`opacity_per_km`](@ref), with the
+    air density [`air_density`](@ref) from the layer temperature and pressure), and,
+    optionally, the density-scaled opacity `τ / m_air` (m² kg⁻¹;
+    [`density_scaled_opacity`](@ref)).
 
 All these variables are then written as time series, multi-year means, and standard
 deviations of gridded, zonal-mean, and global-mean fields with the pipeline of
@@ -79,12 +81,14 @@ using ..TimeSeriesMeSd: TimeSeriesMeSd
 using ..TimeSeriesMeSd:
     AnyVariable,
     GridInfo,
+    VerticalCoordinate,
     LazyVariable,
     RunData,
     TimeSeriesConfig,
     VariableData,
     YearMonth,
     process_runs,
+    layer_pressure,
     validate_config,
     yearmonth_range
 
@@ -97,7 +101,8 @@ include("driver.jl")
 # Size bins and array kernels
 export DustBin, bin_sources, bin_fractions, optics_classes
 export DustBinMasses, combine_bins, column_masses
-export effective_radius, column_mean_effective_radius, density_scaled_opacity
+export effective_radius, column_mean_effective_radius
+export air_density, opacity_per_km, density_scaled_opacity
 
 # Optical lookup tables
 export SpectralTable, read_band_bounds, read_spectral_table, wavelength_label
@@ -106,6 +111,7 @@ export SpectralSet, OpticalCoefficients, interpolate_coefficients, write_coeffic
 # Configuration, input, and driver
 export OPTICAL_QUANTITIES, DustOpticsConfig, run_fractions, validate_optics_config
 export optics_variable_names, input_file, load_optics_run, optics_variables
+export needs_density, layer_air_density, temperature_offset
 export run_dust_optics, optical_coefficients
 
 end # module DustOptics
