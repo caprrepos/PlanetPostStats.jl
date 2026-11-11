@@ -359,6 +359,10 @@ end
         @test isnan(y2[1, 1, 1, 1])
         @test y2[1, 1, 2, 1] ≈ log(9.0) + wgt * (log(5.0) - log(9.0)) rtol = 1e-6
         @test all(isnan, y2[2, 1, :, 1])
+        @test_throws ArgumentError interpolate_to_pressure(
+            x, ps, [9.0, 0.5, 0.4], vc, [5.0]
+        )                                         # σ layer 2 above Ptop
+        @test TimeSeriesMeSd.check_sigma_layers(plm, vc) === nothing
         @test_throws ArgumentError interpolate_to_pressure(x, ps, reverse(plm), vc, [5.0])
         @test_throws DimensionMismatch interpolate_to_pressure(
             x, fill(10.0f0, 2, 1, 1), plm, vc, [5.0]

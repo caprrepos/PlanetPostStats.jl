@@ -97,6 +97,7 @@ const VC = VerticalCoordinate(31, 6.86, 0.2)    # vertical coordinate of test_co
         @test_throws DimensionMismatch air_density(psx[:, :, 1:2], Tx, plmx, vc, 188.92)
         @test_throws DimensionMismatch air_density(psx, Tx, plmx[1:3], vc, 188.92)
         @test_throws ArgumentError air_density(psx, Tx, plmx, vc, 0.0)
+        @test_throws ArgumentError air_density(psx, Tx, [5.0, 3.0, 1.0, 0.1], vc, 188.92)
         beta = opacity_per_km(mq, c, air, rho)
         @test beta[2, 2, 3, 4] ≈ 1000 * dso[2, 2, 3, 4] * rho[2, 2, 3, 4] rtol = 1e-5
         @test_throws DimensionMismatch opacity_per_km(mq, c, air, rho[:, :, 1:2, :])

@@ -365,7 +365,8 @@ of the atmosphere.
   - `vc::VerticalCoordinate`: parameters of the vertical coordinate.
   - `gas_constant::Real`: specific gas constant (J kg⁻¹ K⁻¹), e.g. 188.92 for CO₂.
 
-Cells with a missing value or a non-positive temperature are `NaN32`.
+Cells with a missing value or a non-positive temperature are `NaN32`. Throws an
+`ArgumentError` if `plm` does not match `vc` (`TimeSeriesMeSd.check_sigma_layers`).
 
 # Example
 
@@ -391,11 +392,12 @@ function air_density(
     length(plm) == nlev ||
         throw(DimensionMismatch("plm has $(length(plm)) levels, temperature $nlev"))
     gas_constant > 0 || throw(ArgumentError("gas_constant must be positive"))
+    TimeSeriesMeSd.check_sigma_layers(plm, vc)
     rho = Array{Float32}(undef, nlon, nlat, nlev, nt)
     @inbounds for t in 1:nt, l in 1:nlev, j in 1:nlat, i in 1:nlon
         T = Float64(temperature[i, j, l, t])
         p = 100 * layer_pressure(Float64(ps[i, j, t]), plm[l], l, vc)   # Pa
-        rho[i, j, l, t] = T > 0 && isfinite(p) ? Float32(p / (gas_constant * T)) : NaN32
+        rho[i, j, l, t] = T > 0 && p > 0 ? Float32(p / (gas_constant * T)) : NaN32
     end
     return rho
 end
