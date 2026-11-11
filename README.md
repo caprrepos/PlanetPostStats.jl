@@ -265,6 +265,44 @@ using Pkg
 Pkg.test("PlanetPostStats")   # synthetic scaleacc files with analytic solutions
 ```
 
+## Benchmarks
+
+`benchmark/benchmarks.jl` defines a benchmark suite (`SUITE`, BenchmarkTools.jl format)
+on synthetic data created when the script is loaded:
+
+| group | benchmarks |
+|:------|:-----------|
+| `TimeSeriesMeSd/kernels` | `planet_means` (2D, 3D), `annual_means`, `seasonal_means`, `multiyear_stats`, `monthly_stats`, `interpolate_to_pressure` (43 Mars levels), on a 72 × 46 × 40 grid, 2 Mars years |
+| `TimeSeriesMeSd/pipeline` | `run_timeseries_statistics` from monthly scaleacc files (72 × 46 × 10 grid, 2 Mars years, dust tracers, all products), without and with pressure levels |
+| `DustOptics/kernels` | `combine_bins`, `column_masses`, `effective_radius`, `column_mean_effective_radius`, `interpolate_coefficients`, `density_scaled_opacity`, `air_density`, `opacity_per_km` |
+| `DustOptics/pipeline` | `run_dust_optics` on the output of the `TimeSeriesMeSd` pipeline |
+
+[AirspeedVelocity.jl](https://github.com/MilesCranmer/AirspeedVelocity.jl) compares
+revisions of the package with this suite. Every pull request into `main` gets a comment
+with the run times and memory allocations of `main` and of the pull request
+(workflow `.github/workflows/Benchmark.yml`). Locally, install the command-line tool
+once,
+
+```bash
+julia -e 'using Pkg; Pkg.activate(temp=true); Pkg.add("AirspeedVelocity"); Pkg.build("AirspeedVelocity")'
+```
+
+and compare the working copy with `main` from the package directory:
+
+```bash
+~/.julia/bin/benchpkg --rev=main,dirty --bench-on=dirty --exeflags="--threads=2"
+```
+
+The suite can also be run directly with BenchmarkTools:
+
+```julia
+julia --project=benchmark -e 'using Pkg; Pkg.instantiate();
+    include("benchmark/benchmarks.jl"); display(run(SUITE; verbose=true))'
+```
+
+Benchmarks of functions that do not exist in an older revision are skipped for that
+revision.
+
 ## Formatting
 
 Code follows Blue Style; format with `using JuliaFormatter; format(".")`
