@@ -6,13 +6,12 @@
 [![Coverage](https://codecov.io/gh/caprrepos/PlanetPostStats.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/caprrepos/PlanetPostStats.jl)
 [![Code Style: Blue](https://img.shields.io/badge/code%20style-blue-4495d1.svg)](https://github.com/JuliaDiff/BlueStyle)
 
-Statistical post-processing of `scaleacc` output from NASA GISS ModelE and ROCKE-3D
-simulations, for one or many simulations at once.
+The package generates time-series from monthly-mean two- or three-dimensional output data of `scaleacc`, which converts the accumulation (`acc`) files of NASA GISS ModelE and ROCKE-3D simulations into NetCDF files (e.g. with `aij`, `aijl`, `taijl` in the name, grouping different variables) and calculates zonal and global mean time series from them as well. It also does statistical post-processing of the time series data. Some further processing can also be done with the new time-series as input and additional time series are then produced. The processing can be done for multiple simulations at once. The package is organized as submodules with their own specific functionalities. Currently, following submodules are available, and more will be added in the near future:
 
 | Submodule        | Purpose |
 |:-----------------|:--------|
-| `TimeSeriesMeSd` | monthly, seasonal, and annual time series and multi-year means and standard deviations of gridded, zonal-mean, and global-mean fields |
-| `DustOptics`     | effective radii and scattering, absorption, and extinction optical depths of the dust aerosol, computed from the `TimeSeriesMeSd` output of the dust tracers, with the same time series and statistics |
+| `TimeSeriesMeSd` | generates monthly, seasonal, and annual time series and multi-year means and standard deviations of gridded, zonal-mean, and global-mean fields |
+| `DustOptics`     | calculates effective radii and scattering, absorption, and extinction optical depths of dust aerosols, computed from the `TimeSeriesMeSd` output of the dust tracers, generates additional time series and statistics |
 
 ## Installation
 
@@ -21,12 +20,16 @@ using Pkg
 Pkg.add(url="https://github.com/caprrepos/PlanetPostStats.jl")
 # or, for a local clone
 Pkg.develop(path="/path/to/PlanetPostStats.jl")
+# once registered in the General registry of Julia:
+Pkg.add("PlanetPostStats")
 ```
 
 Requires Julia ≥ 1.10. Dependencies: PlanetTools ≥ 0.2.2, NCDatasets, DataFrames,
 OrderedCollections, CSV, Dates.
 
 ## Quick start
+
+Note: The submodules (or their functions) have to be explicitly imported into the workspace to use their functionalities.
 
 ```julia
 using PlanetPostStats.TimeSeriesMeSd
@@ -258,52 +261,3 @@ All statistics are computed with `PlanetTools.PlanetStatistics`:
 One run is held in memory at a time; for each variable all products are computed and
 written before the next variable is processed.
 
-## Tests
-
-```julia
-using Pkg
-Pkg.test("PlanetPostStats")   # synthetic scaleacc files with analytic solutions
-```
-
-## Benchmarks
-
-`benchmark/benchmarks.jl` defines a benchmark suite (`SUITE`, BenchmarkTools.jl format)
-on synthetic data created when the script is loaded:
-
-| group | benchmarks |
-|:------|:-----------|
-| `TimeSeriesMeSd/kernels` | `planet_means` (2D, 3D), `annual_means`, `seasonal_means`, `multiyear_stats`, `monthly_stats`, `interpolate_to_pressure` (43 Mars levels), on a 72 × 46 × 40 grid, 2 Mars years |
-| `TimeSeriesMeSd/pipeline` | `run_timeseries_statistics` from monthly scaleacc files (72 × 46 × 10 grid, 2 Mars years, dust tracers, all products), without and with pressure levels |
-| `DustOptics/kernels` | `combine_bins`, `column_masses`, `effective_radius`, `column_mean_effective_radius`, `interpolate_coefficients`, `density_scaled_opacity`, `air_density`, `opacity_per_km` |
-| `DustOptics/pipeline` | `run_dust_optics` on the output of the `TimeSeriesMeSd` pipeline |
-
-[AirspeedVelocity.jl](https://github.com/MilesCranmer/AirspeedVelocity.jl) compares
-revisions of the package with this suite. Every pull request into `main` gets a comment
-with the run times and memory allocations of `main` and of the pull request
-(workflow `.github/workflows/Benchmark.yml`). Locally, install the command-line tool
-once,
-
-```bash
-julia -e 'using Pkg; Pkg.activate(temp=true); Pkg.add("AirspeedVelocity"); Pkg.build("AirspeedVelocity")'
-```
-
-and compare the working copy with `main` from the package directory:
-
-```bash
-~/.julia/bin/benchpkg --rev=main,dirty --bench-on=dirty --exeflags="--threads=2"
-```
-
-The suite can also be run directly with BenchmarkTools:
-
-```julia
-julia --project=benchmark -e 'using Pkg; Pkg.instantiate();
-    include("benchmark/benchmarks.jl"); display(run(SUITE; verbose=true))'
-```
-
-Benchmarks of functions that do not exist in an older revision are skipped for that
-revision.
-
-## Formatting
-
-Code follows Blue Style; format with `using JuliaFormatter; format(".")`
-(`.JuliaFormatter.toml` sets `style = "blue"`).
