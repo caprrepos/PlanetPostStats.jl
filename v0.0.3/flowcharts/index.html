@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="referrer" content="no-referrer"/><title>Flowcharts · PlanetPostStats.jl</title><meta name="title" content="Flowcharts · PlanetPostStats.jl"/><meta property="og:title" content="Flowcharts · PlanetPostStats.jl"/><meta property="twitter:title" content="Flowcharts · PlanetPostStats.jl"/><meta name="description" content="Documentation for PlanetPostStats.jl."/><meta property="og:description" content="Documentation for PlanetPostStats.jl."/><meta property="twitter:description" content="Documentation for PlanetPostStats.jl."/><meta property="og:url" content="https://caprrepos.github.io/PlanetPostStats.jl/flowcharts/"/><meta property="twitter:url" content="https://caprrepos.github.io/PlanetPostStats.jl/flowcharts/"/><link rel="canonical" href="https://caprrepos.github.io/PlanetPostStats.jl/flowcharts/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">PlanetPostStats.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><input class="collapse-toggle" id="menuitem-2" type="checkbox"/><label class="tocitem" for="menuitem-2"><span class="docs-label">TimeSeriesMeSd</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../timeseriesmesd/overview/">Overview</a></li><li><a class="tocitem" href="../timeseriesmesd/configuration/">Configuration</a></li><li><a class="tocitem" href="../timeseriesmesd/calendar/">Calendar and seasons</a></li><li><a class="tocitem" href="../timeseriesmesd/input/">Input: scaleacc files</a></li><li><a class="tocitem" href="../timeseriesmesd/statistics/">Statistics</a></li><li><a class="tocitem" href="../timeseriesmesd/pressure_levels/">Pressure levels</a></li><li><a class="tocitem" href="../timeseriesmesd/output/">Output files</a></li><li><a class="tocitem" href="../timeseriesmesd/driver/">Driver</a></li></ul></li><li><input class="collapse-toggle" id="menuitem-3" type="checkbox"/><label class="tocitem" for="menuitem-3"><span class="docs-label">DustOptics</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../dustoptics/overview/">Overview</a></li><li><a class="tocitem" href="../dustoptics/bins/">Size bins and kernels</a></li><li><a class="tocitem" href="../dustoptics/spectral/">Optical lookup tables</a></li><li><a class="tocitem" href="../dustoptics/configuration/">Configuration</a></li><li><a class="tocitem" href="../dustoptics/input/">Input</a></li><li><a class="tocitem" href="../dustoptics/driver/">Driver</a></li></ul></li><li class="is-active"><a class="tocitem" href>Flowcharts</a><ul class="internal"><li><a class="tocitem" href="#1.-Data-flow-between-the-submodules"><span>1. Data flow between the submodules</span></a></li><li><a class="tocitem" href="#2.-Data-flow-within-one-run-(shared-pipeline)"><span>2. Data flow within one run (shared pipeline)</span></a></li><li><a class="tocitem" href="#3.-Data-flow-within-DustOptics"><span>3. Data flow within DustOptics</span></a></li><li><a class="tocitem" href="#4.-Function-calls:-TimeSeriesMeSd"><span>4. Function calls: TimeSeriesMeSd</span></a></li><li><a class="tocitem" href="#5.-Function-calls:-DustOptics"><span>5. Function calls: DustOptics</span></a></li></ul></li><li><a class="tocitem" href="../api_index/">Index</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Flowcharts</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Flowcharts</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/caprrepos/PlanetPostStats.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/caprrepos/PlanetPostStats.jl/blob/main/docs/src/flowcharts.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Flowcharts"><a class="docs-heading-anchor" href="#Flowcharts">Flowcharts</a><a id="Flowcharts-1"></a><a class="docs-heading-anchor-permalink" href="#Flowcharts" title="Permalink"></a></h1><p>Data flow through the two submodules, and the function calls within each. Rectangles are functions, rounded boxes are data, cylinders are files. Functions from <code>PlanetTools</code> are marked <em>(PlanetTools)</em>.</p><h2 id="1.-Data-flow-between-the-submodules"><a class="docs-heading-anchor" href="#1.-Data-flow-between-the-submodules">1. Data flow between the submodules</a><a id="1.-Data-flow-between-the-submodules-1"></a><a class="docs-heading-anchor-permalink" href="#1.-Data-flow-between-the-submodules" title="Permalink"></a></h2><div class="mermaid">flowchart LR
+    SA[(&quot;scaleacc monthly files&lt;br/&gt;&amp;lt;MON&amp;gt;&amp;lt;YYYY&amp;gt;.&amp;lt;product&amp;gt;&amp;lt;run&amp;gt;.nc&lt;br/&gt;aij, aijl, taijl, …&quot;)]
+    TS[&quot;TimeSeriesMeSd&lt;br/&gt;run_timeseries_statistics&quot;]
+    O1[(&quot;time series and statistics&lt;br/&gt;e.g. Tracermass3d/…&lt;br/&gt;*.mts, *.ats, *.sts,&lt;br/&gt;*.moa/soa, *.mos/sos, *.mom/som&quot;)]
+    MTS[(&quot;dust tracers q_s and air mass m_air&lt;br/&gt;MonthlyTs/*.ijl.mts.nc&quot;)]
+    SP[(&quot;optical-property files aer_*.nc&lt;br/&gt;band bounds sp_*_bands.csv&quot;)]
+    DO[&quot;DustOptics&lt;br/&gt;run_dust_optics&quot;]
+    O2[(&quot;time series and statistics&lt;br/&gt;e.g. Traceroptics3d/…&lt;br/&gt;r_eff, τ_sct, τ_abs, τ_ext&quot;)]
+    CF[(&quot;interpolated coefficients&lt;br/&gt;aer_*_interpol_*.nc&quot;)]
+
+    SA --&gt; TS --&gt; O1
+    O1 -.- MTS
+    MTS --&gt; DO
+    SP --&gt; DO
+    DO --&gt; O2
+    DO --&gt; CF</div><h2 id="2.-Data-flow-within-one-run-(shared-pipeline)"><a class="docs-heading-anchor" href="#2.-Data-flow-within-one-run-(shared-pipeline)">2. Data flow within one run (shared pipeline)</a><a id="2.-Data-flow-within-one-run-(shared-pipeline)-1"></a><a class="docs-heading-anchor-permalink" href="#2.-Data-flow-within-one-run-(shared-pipeline)" title="Permalink"></a></h2><p><code>process_run(cfg, rd)</code> of <code>TimeSeriesMeSd</code>, used by both submodules. The variables are processed one at a time; a <code>LazyVariable</code> is computed only here.</p><div class="mermaid">flowchart TD
+    RD([&quot;RunData&lt;br/&gt;grid, months, variables&lt;br/&gt;(VariableData or LazyVariable)&quot;])
+    OE[&quot;output_entries&lt;br/&gt;model levels; optionally pressure levels&lt;br/&gt;(interpolate_to_pressure, monthly p_s)&quot;]
+    X([&quot;monthly field x&lt;br/&gt;(lon, lat[, level], time)&quot;])
+    SM[&quot;planet_means&lt;br/&gt;ij: gridded · zm: zonal mean · gm: global mean&quot;]
+    AM[&quot;annual_means&lt;br/&gt;full calendar years&quot;]
+    SE[&quot;seasonal_means&lt;br/&gt;one series per season&quot;]
+    MYA[&quot;multiyear_stats&lt;br/&gt;annual means in window&quot;]
+    MYS[&quot;multiyear_stats&lt;br/&gt;seasonal means in window&quot;]
+    MS[&quot;monthly_stats&lt;br/&gt;each month of the annual cycle&quot;]
+    WF[&quot;write_field!&quot;]
+    F1[(&quot;MonthlyTs/*.mts.nc&quot;)]
+    F2[(&quot;AnnualTs/*.ats.nc&quot;)]
+    F3[(&quot;SeasonalTs/*.sts.nc&quot;)]
+    F4[(&quot;AnnualMeSd/*.moa.nc, *.soa.nc&quot;)]
+    F5[(&quot;SeasonalMeSd/*.mos.nc, *.sos.nc&quot;)]
+    F6[(&quot;MonthlyMeSd/*.mom.nc, *.som.nc&quot;)]
+    RR([&quot;RunResult&lt;br/&gt;files; annual and seasonal&lt;br/&gt;summaries of 2D global means&quot;])
+
+    RD --&gt; OE --&gt; X --&gt; SM
+    SM --&gt; AM --&gt; MYA
+    SM --&gt; SE --&gt; MYS
+    SM --&gt; MS
+    SM -- mts --&gt; WF
+    AM -- ats --&gt; WF
+    SE -- sts --&gt; WF
+    MYA -- moa, soa --&gt; WF
+    MYS -- mos, sos --&gt; WF
+    MS -- mom, som --&gt; WF
+    WF --&gt; F1 &amp; F2 &amp; F3 &amp; F4 &amp; F5 &amp; F6
+    MYA --&gt; RR
+    MYS --&gt; RR</div><h2 id="3.-Data-flow-within-DustOptics"><a class="docs-heading-anchor" href="#3.-Data-flow-within-DustOptics">3. Data flow within DustOptics</a><a id="3.-Data-flow-within-DustOptics-1"></a><a class="docs-heading-anchor-permalink" href="#3.-Data-flow-within-DustOptics" title="Permalink"></a></h2><div class="mermaid">flowchart TD
+    CFG([&quot;DustOpticsConfig&lt;br/&gt;stats, bins, fractions, spectral sets&quot;])
+    SP[(&quot;aer_*.nc + sp_*_bands.csv&quot;)]
+    RST[&quot;read_spectral_table&quot;]
+    ST([&quot;SpectralTable → SpectralSet&lt;br/&gt;diagnostic wavelengths λ&quot;])
+    IC[&quot;interpolate_coefficients&lt;br/&gt;log–log in λ and r&quot;]
+    OC([&quot;OpticalCoefficients&lt;br/&gt;k_scat, k_abs, g at (λ, r_b)&quot;])
+    CF[(&quot;aer_*_interpol_*.nc&quot;)]
+    MTS[(&quot;tracer time series&lt;br/&gt;*.ijl.mts.nc: q_s, m_air, T, p_s&quot;)]
+    LOR[&quot;load_optics_run&quot;]
+    DBM([&quot;DustBinMasses&lt;br/&gt;m_b = f_b · q_s · m_air&quot;])
+    OV[&quot;optics_variables&quot;]
+    R3[&quot;effective_radius&lt;br/&gt;effRad3d&quot;]
+    RC[&quot;effective_radius ∘ column_masses&lt;br/&gt;effRadColMass&quot;]
+    RA[&quot;column_mean_effective_radius&lt;br/&gt;effRadColAve&quot;]
+    T3[&quot;combine_bins: τ = Σ k_b m_b&lt;br/&gt;sct3d, abs3d, ext3d&quot;]
+    T2[&quot;combine_bins ∘ column_masses&lt;br/&gt;sct2d, abs2d, ext2d&quot;]
+    DS[&quot;opacity_per_km: τ ρ_air / m_air&lt;br/&gt;sctkm, abskm, extkm&lt;br/&gt;(density_scaled_opacity: sctdso, …)&quot;]
+    PR[&quot;process_run&lt;br/&gt;(shared pipeline)&quot;]
+
+    SP --&gt; RST --&gt; ST --&gt; IC --&gt; OC
+    CFG --&gt; RST
+    OC --&gt; CF
+    MTS --&gt; LOR --&gt; DBM
+    CFG --&gt; LOR
+    DBM --&gt; OV
+    OC --&gt; OV
+    OV --&gt; R3 &amp; RC &amp; RA &amp; T3 &amp; T2 &amp; DS
+    R3 &amp; RC &amp; RA &amp; T3 &amp; T2 &amp; DS --&gt; PR</div><h2 id="4.-Function-calls:-TimeSeriesMeSd"><a class="docs-heading-anchor" href="#4.-Function-calls:-TimeSeriesMeSd">4. Function calls: TimeSeriesMeSd</a><a id="4.-Function-calls:-TimeSeriesMeSd-1"></a><a class="docs-heading-anchor-permalink" href="#4.-Function-calls:-TimeSeriesMeSd" title="Permalink"></a></h2><div class="mermaid">flowchart LR
+    RTS[&quot;run_timeseries_statistics&quot;] --&gt; VC[&quot;validate_config&quot;]
+    RTS --&gt; PRs[&quot;process_run(cfg, run)&quot;]
+    PRs --&gt; LR[&quot;load_run&quot;]
+    PRs --&gt; PRd[&quot;process_run(cfg, rd)&quot;]
+    PRN[&quot;process_runs(load, cfg, runs)&lt;br/&gt;entry point for applications&quot;] --&gt; PRd
+
+    LR --&gt; INF[&quot;input_filename&quot;]
+    INF --&gt; SCF[&quot;scaleacc_filename&lt;br/&gt;or cfg.filename&quot;]
+    SCF --&gt; FN[&quot;fnames_modele&lt;br/&gt;(PlanetTools)&quot;]
+    LR --&gt; SS[&quot;spatial_shape&quot;]
+    LR --&gt; RC[&quot;read_coordinate&quot;]
+
+    PRd --&gt; OE[&quot;output_entries&quot;]
+    OE --&gt; OPL[&quot;output_pressure_levels&quot;]
+    OE --&gt; ITP[&quot;interpolate_to_pressure&quot;]
+    ITP --&gt; LP[&quot;layer_pressure&quot;]
+    OE --&gt; FLD[&quot;field&lt;br/&gt;VariableData / LazyVariable&quot;]
+
+    PRd --&gt; PER[&quot;annual_periods, seasonal_periods,&lt;br/&gt;climatology_slots, period_in_window&quot;]
+    PRd --&gt; MW[&quot;month_weights&quot;]
+    PRd --&gt; OF[&quot;output_filename&quot;]
+    PRd --&gt; COF[&quot;create_output_file&quot;]
+    COF --&gt; OPB[&quot;output_pressure_bounds&quot;]
+    OPB --&gt; PLB[&quot;pressure_level_bounds&quot;]
+    OPB --&gt; MLB[&quot;model_level_bounds&quot;]
+    COF --&gt; WN[&quot;writenetcdf&lt;br/&gt;(PlanetTools)&quot;]
+
+    PRd --&gt; PM[&quot;planet_means&quot;]
+    PRd --&gt; AM[&quot;annual_means&quot;]
+    PRd --&gt; SE[&quot;seasonal_means&quot;]
+    PRd --&gt; MY[&quot;multiyear_stats&quot;]
+    PRd --&gt; MS[&quot;monthly_stats&quot;]
+    PRd --&gt; WF[&quot;write_field!&quot;]
+    WF --&gt; WN
+
+    PM --&gt; CPM[&quot;calc_planet_means!&lt;br/&gt;(PlanetTools)&quot;]
+    AM --&gt; CAM[&quot;calc_annual_mean_ts!&lt;br/&gt;(PlanetTools)&quot;]
+    SE --&gt; CSM[&quot;calc_seasonal_mean_ts!&lt;br/&gt;(PlanetTools)&quot;]
+    MY --&gt; CMS[&quot;calc_multiyear_stats!&lt;br/&gt;(PlanetTools)&quot;]
+    MS --&gt; CMS
+
+    PRd --&gt; RRs[&quot;RunResult&quot;]
+    RRs --&gt; SUM[&quot;annual_summary,&lt;br/&gt;seasonal_summary&quot;]</div><h2 id="5.-Function-calls:-DustOptics"><a class="docs-heading-anchor" href="#5.-Function-calls:-DustOptics">5. Function calls: DustOptics</a><a id="5.-Function-calls:-DustOptics-1"></a><a class="docs-heading-anchor-permalink" href="#5.-Function-calls:-DustOptics" title="Permalink"></a></h2><div class="mermaid">flowchart LR
+    RDO[&quot;run_dust_optics&quot;] --&gt; VOC[&quot;validate_optics_config&quot;]
+    VOC --&gt; OVN[&quot;optics_variable_names&quot;]
+    VOC --&gt; VC[&quot;validate_config&lt;br/&gt;(TimeSeriesMeSd)&quot;]
+    RDO --&gt; OC[&quot;optical_coefficients&quot;]
+    OC --&gt; IC[&quot;interpolate_coefficients&quot;]
+    IC --&gt; IEL[&quot;interpolate_extinction_coeff_log&lt;br/&gt;(PlanetTools)&quot;]
+    OC --&gt; WC[&quot;write_coefficients&quot;]
+    WC --&gt; WN[&quot;writenetcdf&lt;br/&gt;(PlanetTools)&quot;]
+    RDO --&gt; PRN[&quot;process_runs&lt;br/&gt;(TimeSeriesMeSd)&quot;]
+    PRN --&gt; LOR[&quot;load_optics_run&quot;]
+    PRN --&gt; PRd[&quot;process_run(cfg, rd)&lt;br/&gt;(TimeSeriesMeSd)&quot;]
+
+    RSTb[&quot;read_spectral_table&lt;br/&gt;(application script)&quot;] --&gt; RBB[&quot;read_band_bounds&quot;]
+    RSTb --&gt; ST([&quot;SpectralTable → SpectralSet&quot;])
+
+    LOR --&gt; IF[&quot;input_file&quot;]
+    LOR --&gt; RF[&quot;read_field&quot;]
+    LOR --&gt; RFR[&quot;run_fractions&quot;]
+    LOR --&gt; BS[&quot;bin_sources&quot;]
+    LOR --&gt; DBM([&quot;DustBinMasses&quot;])
+    LOR --&gt; OV[&quot;optics_variables&quot;]
+    OV --&gt; OVS[&quot;optics_variable_specs&quot;]
+    OVS --&gt; OCL[&quot;optics_classes&quot;]
+    OVS --&gt; WL[&quot;wavelength_label&quot;]
+    OV --&gt; LV([&quot;LazyVariable per output variable&quot;])
+
+    LV -. &quot;computed in process_run&quot; .-&gt; ER[&quot;effective_radius&quot;]
+    LV -.-&gt; CMER[&quot;column_mean_effective_radius&quot;]
+    LV -.-&gt; CB[&quot;combine_bins&quot;]
+    LV -.-&gt; CM[&quot;column_masses&quot;]
+    LV -.-&gt; OPK[&quot;opacity_per_km&quot;]
+    OPK --&gt; DSO[&quot;density_scaled_opacity&quot;]
+    LV -.-&gt; DSO
+    DSO --&gt; CB
+    LOR --&gt; LAD[&quot;layer_air_density&quot;]
+    LAD --&gt; AD[&quot;air_density&quot;]
+    ER --&gt; CB
+    CMER --&gt; ER
+    CMER --&gt; CWM[&quot;calc_weighted_mean&lt;br/&gt;(PlanetTools)&quot;]</div><script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/+esm';
+mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral"
+});
+</script></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../dustoptics/driver/">« Driver</a><a class="docs-footer-nextpage" href="../api_index/">Index »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.20.0 on <span class="colophon-date" title="Thursday 12 November 2026 17:41">Thursday 12 November 2026</span>. Using Julia version 1.13.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
