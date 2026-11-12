@@ -37,6 +37,33 @@ true
 end
 
 """
+    check_sigma_layers(plm, vc::VerticalCoordinate) -> nothing
+
+Throws an `ArgumentError` unless the reference mid-layer pressures `plm` of all σ layers
+(`l < vc.ls1`) are larger than `vc.ptop`, as required for positive layer pressures
+([`layer_pressure`](@ref)); otherwise `plm` and the vertical coordinate
+(`LS1`, `Ptop`) do not belong together.
+
+# Example
+
+```julia
+julia> check_sigma_layers([5.0, 1.0], VerticalCoordinate(31, 6.86, 0.2)) === nothing
+true
+```
+"""
+function check_sigma_layers(plm::AbstractVector{<:Real}, vc::VerticalCoordinate)
+    for l in 1:min(length(plm), vc.ls1 - 1)
+        plm[l] > vc.ptop || throw(
+            ArgumentError(
+                "plm[$l] = $(plm[l]) hPa of σ layer $l is not above Ptop = $(vc.ptop) " *
+                "hPa: plm does not match the vertical coordinate (LS1 = $(vc.ls1))",
+            ),
+        )
+    end
+    return nothing
+end
+
+"""
     interpolate_to_pressure(x, ps, plm, vc, plev) -> Array{Float32,4}
 
 Interpolates the monthly 3D field `x` from the model layers to the pressure levels `plev`.
@@ -53,7 +80,8 @@ layers are computed from the surface pressure `ps` of that column and month with
   - `P < p_L` (above the mid-point of the uppermost layer): missing.
 
 The result is missing where a value of the two bracketing layers or the surface pressure
-is missing. The loop over the columns is multi-threaded.
+is missing. The loop over the columns is multi-threaded. Throws an `ArgumentError` if
+`plm` does not match `vc` ([`check_sigma_layers`](@ref)).
 
 # Arguments
 
@@ -105,6 +133,7 @@ function interpolate_to_pressure(
     issorted(plm; rev=true) || throw(
         ArgumentError("plm must decrease with the layer index (layer 1 at the bottom)")
     )
+    check_sigma_layers(plm, vc)
     np = length(plev)
     target = Float64.(plev)
     logtarget = log.(target)

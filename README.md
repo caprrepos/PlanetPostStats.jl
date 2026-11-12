@@ -1,12 +1,17 @@
 # PlanetPostStats.jl
 
-Statistical post-processing of `scaleacc` output from NASA GISS ModelE and ROCKE-3D
-simulations, for one or many simulations at once.
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://caprrepos.github.io/PlanetPostStats.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://caprrepos.github.io/PlanetPostStats.jl/dev/)
+[![Build Status](https://github.com/caprrepos/PlanetPostStats.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/caprrepos/PlanetPostStats.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/caprrepos/PlanetPostStats.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/caprrepos/PlanetPostStats.jl)
+[![Code Style: Blue](https://img.shields.io/badge/code%20style-blue-4495d1.svg)](https://github.com/JuliaDiff/BlueStyle)
+
+The package generates time-series from monthly-mean two- or three-dimensional output data of `scaleacc`, which converts the accumulation (`acc`) files of NASA GISS ModelE and ROCKE-3D simulations into NetCDF files (e.g. with `aij`, `aijl`, `taijl` in the name, grouping different variables) and calculates zonal and global mean time series from them as well. It also does statistical post-processing of the time series data. Some further processing can also be done with the new time-series as input and additional time series are then produced. The processing can be done for multiple simulations at once. The package is organized as submodules with their own specific functionalities. Currently, following submodules are available, and more will be added in the near future:
 
 | Submodule        | Purpose |
 |:-----------------|:--------|
-| `TimeSeriesMeSd` | monthly, seasonal, and annual time series and multi-year means and standard deviations of gridded, zonal-mean, and global-mean fields |
-| `DustOptics`     | effective radii and scattering, absorption, and extinction optical depths of the dust aerosol, computed from the `TimeSeriesMeSd` output of the dust tracers, with the same time series and statistics |
+| `TimeSeriesMeSd` | generates monthly, seasonal, and annual time series and multi-year means and standard deviations of gridded, zonal-mean, and global-mean fields |
+| `DustOptics`     | calculates effective radii and scattering, absorption, and extinction optical depths of dust aerosols, computed from the `TimeSeriesMeSd` output of the dust tracers, generates additional time series and statistics |
 
 ## Installation
 
@@ -15,12 +20,16 @@ using Pkg
 Pkg.add(url="https://github.com/caprrepos/PlanetPostStats.jl")
 # or, for a local clone
 Pkg.develop(path="/path/to/PlanetPostStats.jl")
+# once registered in the General registry of Julia:
+Pkg.add("PlanetPostStats")
 ```
 
 Requires Julia ≥ 1.10. Dependencies: PlanetTools ≥ 0.2.2, NCDatasets, DataFrames,
 OrderedCollections, CSV, Dates.
 
 ## Quick start
+
+Note: The submodules (or their functions) have to be explicitly imported into the workspace to use their functionalities.
 
 ```julia
 using PlanetPostStats.TimeSeriesMeSd
@@ -65,6 +74,7 @@ All settings are fields of `TimeSeriesConfig`; see its docstring for details.
 | `threshold` | minimum percentage of valid data for every averaging step (default 80) |
 | `weight_seasons` | weight months by their length in seasonal means (default `true`) |
 | `products` | subset of `:mts, :ats, :sts, :moa, :mos, :mom` |
+| `representations_3d` | representations written for 3D variables, subset of `:ij, :zm, :gm` (default all); e.g. `[:zm, :gm]` for only zonal and global means |
 | `output_dir`, `output_name`, `output_root` | output location and file-name tag |
 | `fill_value`, `deflatelevel`, `global_attributes` | NetCDF output settings |
 | `filename` | input file-name function (default `scaleacc_filename`, `<MON><YYYY>.<product><run>.nc`) |
@@ -75,6 +85,12 @@ Per run, in `<simpath>/<run>/<output_dir>/` (or `<output_root>/<run>/<output_dir
 tag is `ij`, `zm`, `gm` (gridded, zonal mean, global mean), or `ijl`, `zml`, `gml` if the
 file contains 3D variables on model levels, or `ijp`, `zmp`, `gmp` if it contains 3D
 variables only on pressure levels.
+
+With `representations_3d = [:zm, :gm]`, the 3D variables (on model and on pressure
+levels) are written only as zonal and global means; the gridded files then contain only
+the 2D variables (tag `ij`), and gridded files that would be empty are not created. The
+gridded monthly time series of the dust tracers (`*.ijl.mts.nc`) are the input of
+`DustOptics`, so keep `:ij` for that run.
 
 | Directory      | Files | Content |
 |:---------------|:------|:--------|
@@ -188,21 +204,46 @@ For every run and month:
     in `PlanetTools.accumulate_dust_optics_modele`), in the layers (`<q>3d_<λ>_<bin>`,
     e.g. `ext3d_550nm_Clay1`) and of the column (`<q>2d_<λ>_<bin>`, e.g.
     `ext2d_550nm_PM32Dust`). Units 1.
+  - **Opacity profiles** of the layers, for every bin and size class, selected by
+    `opacity_profiles` (default `[:per_km]`). Unlike the optical depth of a layer, they
+    do not depend on the layer thickness:
+      - `:per_km` — opacity per kilometer, the extinction (scattering, absorption)
+        coefficient per unit volume, `β = dso · ρ_air · 1000` (km⁻¹;
+        `<q>km_<λ>_<bin>`, e.g. `extkm_21600nm_PM32Dust`; `opacity_per_km`), the quantity
+        of the dust opacity profiles retrieved by the Mars Climate Sounder at pressure
+        levels. The air density of the layers is `ρ_air = p / (R T)` (`air_density`),
+        with the mid-layer pressure `p` from the surface pressure (`surface_pressure`,
+        default `prsurf`, hPa) and the σ–p coordinate, the layer temperature
+        (`temperature`, default `TempL`, K or °C), and the specific gas constant
+        (`gas_constant`, default 188.92 J kg⁻¹ K⁻¹ for CO₂). Surface pressure and layer
+        temperature must therefore be contained in the input files.
+      - `:density_scaled` — density-scaled opacity, `dso = τ / m_air = Σ_b k_b f_b q_s`
+        (m² kg⁻¹; `<q>dso_<λ>_<bin>`, e.g. `extdso_21600nm_PM32Dust`;
+        `density_scaled_opacity`), proportional to the dust mass mixing ratio; Heavens et
+        al. (2011) introduce it to derive the dust mass mixing ratio from the opacity
+        profiles.
 
 All variables are written with the time series and statistics of `TimeSeriesMeSd`
 (settings of `DustOpticsConfig.stats`). Every variable is computed only when it is
 written, from the source tracer masses of one run, so that memory stays bounded by these
 masses plus a few fields. The selection of the output is controlled by `quantities`,
-`layers`, `columns`, `bin_variables`, and `class_variables`. With
-`stats.pressure_levels`, only the 3D effective radius is interpolated to pressure levels;
-the layer optical depths are layer-integrated quantities and stay on the model levels.
+`layers`, `columns`, `opacity_profiles`, `bin_variables`, and `class_variables`. With
+`stats.pressure_levels`, the 3D effective radius and the opacity profiles are
+interpolated to pressure levels; the layer optical depths are layer-integrated
+quantities and stay on the model levels.
 
 A complete application (ROCKE-3D Mars dust, shortwave and longwave wavelengths, clay
 sub-bin fractions selected by run) is in
 `examples/mkPostDiagTimeSeriesMeSd_Rocke3d_traceroptics3d.jl`.
 
-Reference: Hansen, J. E., and L. D. Travis (1974), Light scattering in planetary
-atmospheres, *Space Sci. Rev.*, 16(4), 527–610, doi:10.1007/BF00168069.
+References:
+
+  - Hansen, J. E., and L. D. Travis (1974), Light scattering in planetary atmospheres,
+    *Space Sci. Rev.*, 16(4), 527–610, doi:10.1007/BF00168069.
+  - Heavens, N. G., et al. (2011), The vertical distribution of dust in the Martian
+    atmosphere during northern spring and summer: Observations by the Mars Climate
+    Sounder and analysis of zonal average vertical dust profiles, *J. Geophys. Res.*,
+    116, E04003, doi:10.1029/2010JE003691.
 
 ## Statistics
 
@@ -220,14 +261,3 @@ All statistics are computed with `PlanetTools.PlanetStatistics`:
 One run is held in memory at a time; for each variable all products are computed and
 written before the next variable is processed.
 
-## Tests
-
-```julia
-using Pkg
-Pkg.test("PlanetPostStats")   # synthetic scaleacc files with analytic solutions
-```
-
-## Formatting
-
-Code follows Blue Style; format with `using JuliaFormatter; format(".")`
-(`.JuliaFormatter.toml` sets `style = "blue"`).

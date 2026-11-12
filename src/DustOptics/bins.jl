@@ -286,6 +286,172 @@ function column_masses(m::DustBinMasses)
 end
 
 """
+    density_scaled_opacity(m::DustBinMasses, coefficients, airmass) -> Array{Float32,4}
+
+Density-scaled opacity (m² kg⁻¹) of the layers: the optical depth of a layer divided by
+the air mass of the layer per unit area,
+
+    dso = τ / m_air = Σ_b k_b m_b / m_air = Σ_b k_b f_b q_s,
+
+with the bin masses `m_b = f_b q_s m_air` of `m`, the mass coefficients
+`coefficients` (`k_b`, m² kg⁻¹; zero for bins not included, see
+[`combine_bins`](@ref)), and the air mass `airmass` (kg m⁻²) used to form `m`. It equals
+the extinction (or scattering, absorption) coefficient per unit volume divided by the
+air density, `β / ρ_air`, and the optical depth per unit pressure divided by the
+gravitational acceleration, `(dτ/dp) / g`. Unlike the optical depth of a layer, it does
+not depend on the thickness of the layer: it is proportional to the dust mass mixing
+ratio and can be interpolated to pressure levels. The Mars Climate Sounder reports the
+mass mixing ratio of dust from its retrieved opacity profiles in this form [Heavens et al.,
+2011]; for the opacity per unit length itself see [`opacity_per_km`](@ref).
+
+Cells with a missing value or a non-positive air mass are `NaN32`.
+
+# Arguments
+
+  - `m::DustBinMasses`: bin masses of the layers.
+  - `coefficients::AbstractVector{<:Real}`: one coefficient per bin (m² kg⁻¹).
+  - `airmass::AbstractArray{<:Real,4}`: air mass of the layers (kg m⁻²), same size as
+    the arrays of `m`.
+
+# References
+
+  - Heavens, N. G., et al. (2011), The vertical distribution of dust in the Martian
+    atmosphere during northern spring and summer: Observations by the Mars Climate
+    Sounder and analysis of zonal average vertical dust profiles, *J. Geophys. Res.*,
+    116, E04003, doi:10.1029/2010JE003691.
+
+# Example
+
+```julia
+air = fill(2.0f0, 1, 1, 1, 1)
+m = DustBinMasses(["Clay"], [0.5f0 .* air], [1], [1.0])   # q = 0.5 kg kg⁻¹
+density_scaled_opacity(m, [3.0], air)[1]                   # 3 · 0.5 = 1.5 m² kg⁻¹
+```
+"""
+function density_scaled_opacity(
+    m::DustBinMasses, coefficients::AbstractVector{<:Real}, airmass::AbstractArray{<:Real,4}
+)
+    isempty(m.masses) ||
+        size(airmass) == size(m.masses[1]) ||
+        throw(
+            DimensionMismatch(
+                "airmass has size $(size(airmass)), masses $(size(m.masses[1]))"
+            ),
+        )
+    tau = combine_bins(m, coefficients)
+    @. tau = ifelse(airmass > 0, tau / airmass, NaN32)
+    return tau
+end
+
+"""
+    air_density(ps, temperature, plm, vc::VerticalCoordinate, gas_constant)
+        -> Array{Float32,4}
+
+Air density (kg m⁻³) at the mid-points of the model layers, from the ideal gas law,
+
+    ρ = p / (R T),
+
+with the mid-layer pressure `p` of the hybrid σ–pressure coordinate
+(`TimeSeriesMeSd.layer_pressure`: `p = p_top + σ (p_s − p_top)` below layer `LS1`,
+`p = plm` above), the temperature `T` of the layer, and the specific gas constant `R`
+of the atmosphere.
+
+# Arguments
+
+  - `ps::AbstractArray{<:Real,3}`: surface pressure (hPa), `(lon, lat, time)`.
+  - `temperature::AbstractArray{<:Real,4}`: layer temperature (K),
+    `(lon, lat, level, time)`.
+  - `plm::AbstractVector{<:Real}`: reference mid-layer pressures (hPa).
+  - `vc::VerticalCoordinate`: parameters of the vertical coordinate.
+  - `gas_constant::Real`: specific gas constant (J kg⁻¹ K⁻¹), e.g. 188.92 for CO₂.
+
+Cells with a missing value or a non-positive temperature are `NaN32`. Throws an
+`ArgumentError` if `plm` does not match `vc` (`TimeSeriesMeSd.check_sigma_layers`).
+
+# Example
+
+```julia
+vc = VerticalCoordinate(31, 6.86, 0.2)
+ρ = air_density(fill(6.86f0, 1, 1, 1), fill(200.0f0, 1, 1, 1, 1), [5.0], vc, 188.92)
+ρ[1]                                    # 500 Pa / (188.92 J kg⁻¹ K⁻¹ · 200 K) ≈ 0.0132
+```
+"""
+function air_density(
+    ps::AbstractArray{<:Real,3},
+    temperature::AbstractArray{<:Real,4},
+    plm::AbstractVector{<:Real},
+    vc::VerticalCoordinate,
+    gas_constant::Real,
+)
+    nlon, nlat, nlev, nt = size(temperature)
+    size(ps) == (nlon, nlat, nt) || throw(
+        DimensionMismatch(
+            "surface pressure has size $(size(ps)), expected $((nlon, nlat, nt))"
+        ),
+    )
+    length(plm) == nlev ||
+        throw(DimensionMismatch("plm has $(length(plm)) levels, temperature $nlev"))
+    gas_constant > 0 || throw(ArgumentError("gas_constant must be positive"))
+    TimeSeriesMeSd.check_sigma_layers(plm, vc)
+    rho = Array{Float32}(undef, nlon, nlat, nlev, nt)
+    @inbounds for t in 1:nt, l in 1:nlev, j in 1:nlat, i in 1:nlon
+        T = Float64(temperature[i, j, l, t])
+        p = 100 * layer_pressure(Float64(ps[i, j, t]), plm[l], l, vc)   # Pa
+        rho[i, j, l, t] = T > 0 && p > 0 ? Float32(p / (gas_constant * T)) : NaN32
+    end
+    return rho
+end
+
+"""
+    opacity_per_km(m::DustBinMasses, coefficients, airmass, density) -> Array{Float32,4}
+
+Opacity per kilometer (km⁻¹) of the layers, the extinction (or scattering, absorption)
+coefficient per unit volume,
+
+    β = dso · ρ_air · 1000 m km⁻¹,     dso = Σ_b k_b m_b / m_air,
+
+i.e. the [`density_scaled_opacity`](@ref) times the air density `density` (kg m⁻³, e.g.
+[`air_density`](@ref)). This is the quantity of the dust opacity profiles retrieved by
+the Mars Climate Sounder at pressure levels [Heavens et al., 2011]. It does not depend
+on the layer thickness and can be interpolated to pressure levels.
+
+# Arguments
+
+  - `m::DustBinMasses`: bin masses of the layers.
+  - `coefficients::AbstractVector{<:Real}`: one coefficient per bin (m² kg⁻¹).
+  - `airmass::AbstractArray{<:Real,4}`: air mass of the layers (kg m⁻²).
+  - `density::AbstractArray{<:Real,4}`: air density of the layers (kg m⁻³).
+
+# References
+
+  - Heavens, N. G., et al. (2011), The vertical distribution of dust in the Martian
+    atmosphere during northern spring and summer: Observations by the Mars Climate
+    Sounder and analysis of zonal average vertical dust profiles, *J. Geophys. Res.*,
+    116, E04003, doi:10.1029/2010JE003691.
+
+# Example
+
+```julia
+air = fill(2.0f0, 1, 1, 1, 1)
+m = DustBinMasses(["Clay"], [0.5f0 .* air], [1], [1.0])
+opacity_per_km(m, [3.0], air, fill(0.01f0, 1, 1, 1, 1))[1]   # 1.5 · 0.01 · 1000 = 15 km⁻¹
+```
+"""
+function opacity_per_km(
+    m::DustBinMasses,
+    coefficients::AbstractVector{<:Real},
+    airmass::AbstractArray{<:Real,4},
+    density::AbstractArray{<:Real,4},
+)
+    size(density) == size(airmass) || throw(
+        DimensionMismatch("density has size $(size(density)), airmass $(size(airmass))")
+    )
+    beta = density_scaled_opacity(m, coefficients, airmass)
+    @. beta *= 1000.0f0 * density
+    return beta
+end
+
+"""
     effective_radius(m::DustBinMasses, bins) -> Array{Float32,4}
 
 Effective radius (m) of the size distribution given by the bin masses `m` of the size

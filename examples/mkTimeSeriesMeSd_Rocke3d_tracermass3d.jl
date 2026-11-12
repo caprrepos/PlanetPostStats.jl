@@ -5,9 +5,9 @@
 # the constants in the section "Settings" at the top; no other code needs to be edited.
 # Replace the paths, run identifiers, and metadata with your own.
 
-using PlanetPostStats.TimeSeriesMeSd
-using OrderedCollections: OrderedDict
 using DataFrames
+using OrderedCollections: OrderedDict
+using PlanetPostStats.TimeSeriesMeSd
 
 ## Settings ===============================================================================
 
@@ -51,13 +51,14 @@ const PTOP = 0.2    # global mean pressure at the bottom of layer LS1 (hPa)
 ## writes them instead of the model levels into the regular files.
 const PRESSURE_LEVELS = nothing
 
-## Statistics ----------------------------------------------------------------------------
-const MISSING_THRESHOLD = 80.0   # percentage threshold required for non-missing data
-
 ## Variables -----------------------------------------------------------------------------
 const DUST_BINS = ["Clay", "Silt1", "Silt2", "Silt3", "Silt4"]
 const DUST_SCALE = 1e-8          # scale of the dust tracers in the scaleacc files
 const DUST_UNITS = "kg kg-1"
+
+## Statistics ----------------------------------------------------------------------------
+const MISSING_THRESHOLD = 80.0   # percentage threshold required for non-missing data
+const FILL_VALUE = -1.0f30
 
 ## Output --------------------------------------------------------------------------------
 const OUTPUT_DIR = "Tracermass3d"     # subdirectory of each run for the output
@@ -66,10 +67,14 @@ const OUTPUT_NAME = "tracermass3d"    # tag in the output file names
 ## Metadata ------------------------------------------------------------------------------
 const RAW_DATA_ORIGIN = "NASA GISS ROCKE-3D Mars"
 const MODEL_REPOSITORY = "<model source repository>"
-const GIT_REVISION = "<git revision of the model code>"
+const MODEL_GIT_REVISION = "<git revision of the model code>"
 const FILE_CREATOR = "<name>"
 const ORGANIZATION = "<organization>"
 const CONTACT = "<e-mail address>"
+
+## Global means shown after the run ----------------------------------------------------
+const INSPECT_VARIABLES = ["prsurf"]
+const INSPECT_SEASONS = ["FMA", "MJJ", "ASO", "NDJ"]
 
 ## End of settings ========================================================================
 
@@ -98,7 +103,7 @@ accumulated = dust_mass_classes(DUST_BINS; units=DUST_UNITS)
 attributes = OrderedDict{String,Any}(
     "Raw_data_origin" => RAW_DATA_ORIGIN,
     "Model_repository" => MODEL_REPOSITORY,
-    "Git_revision" => GIT_REVISION,
+    "Model_git_revision" => MODEL_GIT_REVISION,
     "Input_created_with" => "scaleacc <acc-file> " * join(POSTNAMES, ","),
     "Programming_language" => "Julia v" * string(VERSION),
     "Julia_script_name" => basename(@__FILE__),
@@ -125,22 +130,40 @@ cfg = TimeSeriesConfig(;
     pressure_levels=PRESSURE_LEVELS,
     threshold=MISSING_THRESHOLD,
     weight_seasons=WEIGHT_SEASONS,
+    fill_value=FILL_VALUE,
     output_dir=OUTPUT_DIR,
     output_name=OUTPUT_NAME,
     global_attributes=attributes,
     # filename=(ym, product, run) -> ...,  # only if not "<MON><YYYY>.<product><run>.nc"
 )
 
-## Run -----------------------------------------------------------------------------------
+## Read, calculate, and write ------------------------------------------------------------
+# Per run: monthly, annual, and seasonal time series and multi-year means and standard
+# deviations (annual, seasonal, monthly) of gridded, zonal-mean, and global-mean fields,
+# written to <SIMPATH>/<run>/<OUTPUT_DIR>/{MonthlyTs,AnnualTs,SeasonalTs,AnnualMeSd,
+# SeasonalMeSd,MonthlyMeSd}.
 results = run_timeseries_statistics(cfg)
+[(r.run, length(r.months), length(r.files)) for r in results]
 
 ## Inspect global means --------------------------------------------------------------------
+# Long-time mean of annual global means
 df = annual_summary(results)
-filter(:Varname => ==("prsurf"), df)
-
+# Long-time mean of seasonal global means
 df_seasons = seasonal_summary(results)
-filter([:Varname, :Season] => (v, s) -> v == "prsurf" && s in ("FMA", "ASO"), df_seasons)
 
+# Show as tables
 # Optional, with SummaryTables.jl in your environment:
-# using SummaryTables
-# listingtable(filter(:Varname => ==("prsurf"), df), :MOA; cols=[:Varname], rows=:Experiment)
+#using SummaryTables
+#println("Long-time mean of annual global means")
+#for var in INSPECT_VARIABLES
+#    dfsel = filter(:Varname => v -> v == var, df)
+#    display(listingtable(dfsel, :MOA; cols=[:Varname], rows=:Experiment, sort=false))
+#end
+
+#println("Long-time mean of seasonal global means")
+#for var in INSPECT_VARIABLES
+#    dfsel = filter([:Varname, :Season] => (v, s) -> v == var && s in INSPECT_SEASONS,
+#        df_seasons)
+#    display(listingtable(dfsel, :MOS; cols=[:Varname, :Season], rows=:Experiment,
+#            sort=false))
+#end

@@ -651,6 +651,16 @@ post-processing performed by [`run_timeseries_statistics`](@ref).
     annual means (on Mars the month lengths range from 46 to 66 sols); `false` gives
     equal weights to the months of a season.
   - `products = ALL_PRODUCTS`: subset of [`ALL_PRODUCTS`](@ref) to compute and write.
+  - `representations_3d = [:ij, :zm, :gm]`: spatial representations written for
+    variables with a vertical dimension (on model or pressure levels), a non-empty
+    subset of `:ij` (gridded), `:zm` (zonal mean), and `:gm` (global mean); e.g.
+    `[:zm, :gm]` writes only their zonal and global means, which saves most of the disk
+    space. Variables without a vertical dimension are always written in all three
+    representations. Files that would contain no variable are not created, and the
+    tags of the files follow their content (e.g. `*.ij.mts.nc` instead of
+    `*.ijl.mts.nc` if the gridded files contain only 2D variables). Keep `:ij` for the
+    monthly dust tracer time series that are the input of
+    `PlanetPostStats.DustOptics` (`*.ijl.mts.nc`).
   - `fill_value = -1f30`: value written for missing data (`_FillValue`).
   - `area_variable = "axyp"`: name of the grid-cell area variable in the input files
     (the output files always call it `axyp`).
@@ -698,6 +708,7 @@ Base.@kwdef struct TimeSeriesConfig
     threshold::Float64 = 80.0
     weight_seasons::Bool = true
     products::Vector{Symbol} = collect(ALL_PRODUCTS)
+    representations_3d::Vector{Symbol} = [:ij, :zm, :gm]
     fill_value::Float32 = -1.0f30
     area_variable::String = "axyp"
     global_attributes::OrderedDict{String,Any} = OrderedDict{String,Any}()
@@ -773,7 +784,7 @@ Checks a configuration for consistency and throws an `ArgumentError` describing 
 first problem found. Checks: non-empty runs and (if `require_groups`) groups; unique
 variable names; sources of derived variables defined before use; valid simulation and statistics periods, with the
 statistics window overlapping the simulation period; threshold in (0, 100]; known
-products; `deflatelevel` in 0:9; for `pressure_levels`, a `vertical` coordinate, default levels for the planet if no levels are given, and a
+products; known, unique, non-empty `representations_3d`; `deflatelevel` in 0:9; for `pressure_levels`, a `vertical` coordinate, default levels for the planet if no levels are given, and a
 configured surface-pressure variable; no reserved names (`lon`, `lat`, `level`, `plev`,
 `time`, `year`, `month`, `plm`, `ple`, area variable, `axyp`, `Dates`, `LS1`, `Psf`,
 `Ptop`) used as variable names. Returns `cfg` so that it can be chained.
@@ -845,6 +856,17 @@ function validate_config(
     for p in cfg.products
         p in ALL_PRODUCTS || throw(ArgumentError("unknown product $p"))
     end
+    isempty(cfg.representations_3d) &&
+        throw(ArgumentError("representations_3d must not be empty"))
+    for r in cfg.representations_3d
+        r in (:ij, :zm, :gm) || throw(
+            ArgumentError(
+                "unknown representation :$r in representations_3d (:ij, :zm, :gm)"
+            ),
+        )
+    end
+    allunique(cfg.representations_3d) ||
+        throw(ArgumentError("representations_3d are not unique"))
     0 <= cfg.deflatelevel <= 9 || throw(ArgumentError("deflatelevel must be in 0:9"))
     allunique(s.name for s in cfg.seasons) ||
         throw(ArgumentError("season names are not unique"))

@@ -17,6 +17,7 @@ const AREA = [cosd(lat) for _ in LON, lat in LAT]
 prsurf_val(i, j, ym) = 6.0 + ym.year + 0.01 * i
 z_val(i, j, l, ym) = 1000.0 * l + j
 airmass_val(i, j, l, ym) = Float64(ym.month)
+temp_val(i, j, l, ym) = 180.0 + 10.0 * l + j + 0.1 * ym.month
 clay_raw(i, j, l, ym) = 100.0 + ym.year          # file units: 1e-8 kg/kg
 silt_raw(i, j, l, ym) = 50.0
 
@@ -84,6 +85,18 @@ function make_fake_run(
                             ("lon", "lat", "level");
                             attrib=OrderedDict(
                                 "units" => "kg/m2", "long_name" => "air mass"
+                            ),
+                        )
+                        defVar(
+                            ds,
+                            "TempL",
+                            Float32[
+                                temp_val(i, j, l, ym) for
+                                i in 1:NLON, j in 1:NLAT, l in 1:NLEV
+                            ],
+                            ("lon", "lat", "level");
+                            attrib=OrderedDict(
+                                "units" => "K", "long_name" => "layer temperature"
                             ),
                         )
                     else
@@ -346,10 +359,91 @@ end
         @test isnan(y2[1, 1, 1, 1])
         @test y2[1, 1, 2, 1] ≈ log(9.0) + wgt * (log(5.0) - log(9.0)) rtol = 1e-6
         @test all(isnan, y2[2, 1, :, 1])
+        @test_throws ArgumentError interpolate_to_pressure(
+            x, ps, [9.0, 0.5, 0.4], vc, [5.0]
+        )                                         # σ layer 2 above Ptop
+        @test TimeSeriesMeSd.check_sigma_layers(plm, vc) === nothing
         @test_throws ArgumentError interpolate_to_pressure(x, ps, reverse(plm), vc, [5.0])
         @test_throws DimensionMismatch interpolate_to_pressure(
             x, fill(10.0f0, 2, 1, 1), plm, vc, [5.0]
         )
+    end
+
+    @testset "input reading" begin
+        root = mktempdir()
+        months = yearmonth_range(YearMonth(1, 1), YearMonth(1, 2))
+        make_fake_run(root, "A", months)
+        period = (YearMonth(1, 1), YearMonth(1, 2))
+        # explicit long name overrides the file attribute
+        cfg = test_config(
+            root,
+            ["A"];
+            sim_period=period,
+            stat_period=period,
+            groups=[
+                InputGroup("aij", [InputVariable("prsurf"; units="hPa")]),
+                InputGroup(
+                    "aijl", [InputVariable("z"; units="m", long_name="Geopotential height")]
+                ),
+            ],
+            derived=DerivedVariable[],
+        )
+        rd = load_run(cfg, "A")
+        @test rd.variables["z"].attrib["long_name"] == "Geopotential height"
+        @test rd.variables["prsurf"].attrib["long_name"] == "surface pressure"
+        @test lookup_variable(rd, "z") === rd.variables["z"]
+        @test lookup_variable(rd, "nonexistent") === nothing
+
+        # custom input file names
+        cfgf = test_config(
+            root, ["A"]; filename=(ym, product, run) -> "$(product)_$(run)_$(ym.year).nc"
+        )
+        @test TimeSeriesMeSd.input_filename(cfgf, YearMonth(3, 2), "aij", "A") ==
+            "aij_A_3.nc"
+
+        # existing output files: overwritten, or an error with overwrite = false
+        dir = mktempdir()
+        path = joinpath(dir, "gm.nc")
+        write(path, "old")
+        of = TimeSeriesMeSd.create_output_file(
+            path, cfg, rd, :gm, false; time_cell_method="mean"
+        )
+        @test isfile(path) && filesize(path) > 3
+        @test_throws ArgumentError TimeSeriesMeSd.create_output_file(
+            path,
+            test_config(root, ["A"]; overwrite=false),
+            rd,
+            :gm,
+            false;
+            time_cell_method="mean",
+        )
+        @test_throws ArgumentError TimeSeriesMeSd.write_field!(
+            of, cfg, "x", zeros(Float32, length(rd.months)), OrderedDict{String,Any}(), :foo
+        )
+
+        # 3D variables of different products must have the same number of levels
+        make_fake_run(root, "L", months)
+        path = joinpath(root, "L", "Post", scaleacc_filename(YearMonth(1, 1), "taijl", "L"))
+        rm(path)
+        NCDataset(path, "c") do ds
+            defVar(ds, "lon", LON, ("lon",))
+            defVar(ds, "lat", LAT, ("lat",))
+            defVar(ds, "axyp", AREA, ("lon", "lat"))
+            defVar(ds, "level", Float32[1, 2, 3], ("level",))
+            defVar(ds, "Clay", ones(Float32, NLON, NLAT, 3), ("lon", "lat", "level"))
+        end
+        cfgl = test_config(
+            root,
+            ["L"];
+            sim_period=period,
+            stat_period=period,
+            groups=[
+                InputGroup("aijl", [InputVariable("z"; units="m")]),
+                InputGroup("taijl", [InputVariable("Clay"; scale=1e-8)]),
+            ],
+            derived=DerivedVariable[],
+        )
+        @test_throws DimensionMismatch load_run(cfgl, "L")
     end
 
     @testset "end-to-end" begin
@@ -457,6 +551,74 @@ end
         ) do ds
             @test ds["airmass"][1, 1, 1, 1] ≈ 3.0
         end
+    end
+
+    @testset "representations of 3D variables" begin
+        root = mktempdir()
+        allmonths = yearmonth_range(YearMonth(1, 1), YearMonth(4, 12))
+        make_fake_run(root, "A", allmonths)
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; representations_3d=Symbol[])
+        )
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; representations_3d=[:zm, :xy])
+        )
+        @test_throws ArgumentError validate_config(
+            test_config(root, ["A"]; representations_3d=[:zm, :zm])
+        )
+
+        # only zonal and global means of the 3D variables
+        cfg = test_config(
+            root,
+            ["A"];
+            products=[:mts, :ats, :moa, :sts, :mos, :mom],
+            representations_3d=[:zm, :gm],
+            output_dir="OutZmGm",
+        )
+        res = only(run_timeseries_statistics(cfg))
+        @test all(isfile, res.files)
+        names = basename.(res.files)
+        @test !any(contains(".ijl."), names)
+        @test count(contains(".ij."), names) == count(contains(".zml."), names)
+        @test count(contains(".gml."), names) == count(contains(".zml."), names)
+        out = output_directory(cfg, "A")
+        NCDataset(joinpath(out, "MonthlyTs", "JAN0001-DEC0004.testA.ij.mts.nc")) do ds
+            @test haskey(ds, "prsurf")
+            @test !haskey(ds, "z") && !haskey(ds, "Clay") && !haskey(ds, "PM4Dust")
+            @test !haskey(ds, "level") && !haskey(ds, "plm")
+        end
+        NCDataset(joinpath(out, "MonthlyTs", "JAN0001-DEC0004.testA.zml.mts.nc")) do ds
+            @test size(ds["z"]) == (1, NLAT, NLEV, length(allmonths))
+            @test haskey(ds, "prsurf") && haskey(ds, "plm")
+        end
+        NCDataset(joinpath(out, "AnnualMeSd", "ANN_0002_0004.testA.gml.moa.nc")) do ds
+            @test haskey(ds, "Clay") && haskey(ds, "prsurf")
+        end
+        # same values as with all representations
+        cfga = test_config(root, ["A"]; products=[:moa], output_dir="OutAll")
+        run_timeseries_statistics(cfga)
+        oa = output_directory(cfga, "A")
+        f = joinpath("AnnualMeSd", "ANN_0002_0004.testA.zml.moa.nc")
+        za = NCDataset(ds -> Array(ds["z"]), joinpath(oa, f))
+        zz = NCDataset(ds -> Array(ds["z"]), joinpath(out, f))
+        @test isequal(za, zz)
+
+        # pressure levels added: no gridded file of the pressure-level file set
+        cfgp = test_config(
+            root,
+            ["A"];
+            products=[:mts],
+            representations_3d=[:gm],
+            pressure_levels=PressureLevels([6.0, 3.0]),
+            output_dir="OutGmP",
+        )
+        names = basename.(only(run_timeseries_statistics(cfgp)).files)
+        @test sort(names) == sort([
+            "JAN0001-DEC0004.testA.ij.mts.nc",
+            "JAN0001-DEC0004.testA.zm.mts.nc",
+            "JAN0001-DEC0004.testA.gml.mts.nc",
+            "JAN0001-DEC0004.testA.gmp.mts.nc",
+        ])
     end
 
     @testset "pressure levels end-to-end" begin
