@@ -14,8 +14,8 @@ authors:
     orcid: "https://orcid.org/0000-0003-3634-8941"
     email: "jan.p.perlwitz@caprllc.com"
     affiliation: "Climate, Aerosol, and Pollution Research, LLC"
-version: "0.0.2"
-date-released: "2026-11-06"
+version: "0.0.3"
+date-released: "2026-11-12"
 license: MIT
 repository-code: "https://github.com/caprrepos/PlanetPostStats.jl"
 url: "https://caprrepos.github.io/PlanetPostStats.jl/stable/"
